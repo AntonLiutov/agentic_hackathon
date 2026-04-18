@@ -61,6 +61,13 @@ WebSockets are used for:
 - unread refresh signals
 - room membership updates where useful
 
+Realtime transport should remain hybrid rather than WebSocket-only:
+
+- REST handles history loading, room lists, catalog search, reads, uploads, and administrative actions
+- WebSockets handle live message delivery, presence updates, unread refreshes, and other low-latency events
+
+This avoids polling for high-volume updates without turning the whole application into a WebSocket-only data model.
+
 ### Presence
 
 Each browser tab gets a `tab_id`.
@@ -70,6 +77,12 @@ The client sends heartbeat and recent interaction signals. Redis stores per-tab 
 - `online`: any live tab has recent activity
 - `afk`: at least one live tab exists, but all live tabs are idle for more than one minute
 - `offline`: no live tabs remain
+
+Presence should be based on positive activity and TTL expiry, not on guaranteed "inactive" events:
+
+- the client should emit activity derived from pointer, keyboard, focus, visibility, or similar browser signals
+- browser tab hibernation must be assumed, so JavaScript timers and explicit inactive signals may stop entirely
+- the server should degrade presence naturally when heartbeats expire
 
 ## Authentication Model
 
@@ -107,6 +120,13 @@ Attachment access is evaluated at request time. A valid URL alone is never enoug
 - unread state is represented by `last_read_message_id` per user and conversation
 - opening a chat updates read state and triggers unread refresh events
 
+Message delivery and recovery should follow these rules:
+
+- do not maintain unbounded per-user offline message queues
+- offline delivery is achieved by durable message history plus read state, not by endlessly accumulating undelivered queue items
+- each conversation should expose a monotonic message sequence or watermark suitable for gap detection
+- if a client detects that expected message sequence continuity is broken, it should re-fetch the missing history range rather than trusting live updates alone
+
 ## Deletion Semantics
 
 ### Room Deletion
@@ -129,6 +149,8 @@ The exact implementation must respect the specification without causing broken f
 - message delivery target under 3 seconds
 - presence update target under 2 seconds
 - room history remains usable at 10,000+ messages
+
+Operationally, the design should still behave sensibly for very old rooms with much larger history, such as 100,000 messages or more, even if the formal minimum validation target is lower. This means progressive loading, no eager full-history fetches, and explicit tests or seeded validation for large history traversal.
 
 ## Deployment Contract
 

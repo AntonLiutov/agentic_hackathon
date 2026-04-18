@@ -8,6 +8,7 @@ def test_healthcheck_returns_ok(client: TestClient) -> None:
     payload = response.json()
     assert payload["status"] == "ok"
     assert payload["service"] == "Agentic Chat API"
+    assert payload["dependencies"] == {"database": True, "redis": True}
 
 
 def test_meta_endpoint_returns_basic_runtime_info(client: TestClient) -> None:
@@ -18,3 +19,4 @@ def test_meta_endpoint_returns_basic_runtime_info(client: TestClient) -> None:
     assert payload["app"] == "Agentic Chat API"
     assert "environment" in payload
     assert payload["api_port"] == 8000
+    assert payload["cors_origins"] == ["http://localhost:3000"]

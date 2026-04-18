@@ -36,6 +36,7 @@ Acceptance criteria:
 - backend tests for core permission rules
 - end-to-end tests for auth, messaging, unread, presence, attachments, moderation
 - manual regression checklist for demo
+- include validation for gap recovery and message history integrity behavior
 
 Acceptance criteria:
 
@@ -47,11 +48,13 @@ Acceptance criteria:
 - seed realistic demo users, rooms, and messages
 - test large-history pagination behavior
 - verify latency targets under lightweight local load
+- explicitly validate very large room history traversal, including seeded cases around 100,000 messages if feasible
 
 Acceptance criteria:
 
 - app remains usable with large chat history
 - demo environment feels populated and convincing
+- at least one validation path exists for progressive loading of very old, high-volume room history
 
 ### SP4-05 Submission Readiness
 
