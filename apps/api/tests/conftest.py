@@ -1,9 +1,12 @@
 import asyncio
+import os
 from collections.abc import Iterator
 from unittest.mock import AsyncMock
 
 import pytest
 from fastapi.testclient import TestClient
+
+os.environ.setdefault("PRESENCE_SWEEP_ENABLED", "false")
 
 import app.db.models  # noqa: F401
 from app.db import Base

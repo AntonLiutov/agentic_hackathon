@@ -2,10 +2,13 @@ import { type FormEvent, useCallback, useState } from "react";
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 
 import { useDirectMessages } from "../direct-messages/use-direct-messages";
+import { usePresence } from "../presence/use-presence";
 import { useRooms } from "../rooms/use-rooms";
 import { useSession } from "../session/use-session";
 import { getApiErrorMessage } from "../../shared/api/client";
+import type { PresenceStatus } from "../../shared/api/presence";
 import { useInboxRealtime } from "../../shared/realtime/useInboxRealtime";
+import { usePresenceHeartbeat } from "../../shared/realtime/usePresenceHeartbeat";
 import {
   useWorkspaceContextPanel,
   WorkspaceContextPanelProvider,
@@ -74,6 +77,7 @@ function AppFrameLayout() {
   const navigate = useNavigate();
   const location = useLocation();
   const { user, signOut } = useSession();
+  const { setPresence } = usePresence();
   const {
     acceptInvitation,
     clearMessages,
@@ -139,10 +143,32 @@ function AppFrameLayout() {
     void refreshDirectMessages();
   }, [refreshDirectMessages, refreshRooms]);
 
+  const handlePresenceEvent = useCallback(
+    (userId: string, presenceStatus: PresenceStatus) => {
+      setPresence(userId, presenceStatus);
+    },
+    [setPresence],
+  );
+
   useInboxRealtime({
     enabled: Boolean(user),
     onUnread: handleUnreadEvent,
+    onPresence: handlePresenceEvent,
     onConnected: handleInboxConnected,
+  });
+
+  usePresenceHeartbeat({
+    enabled: Boolean(user),
+    onHeartbeat: useCallback(
+      (presenceStatus: PresenceStatus) => {
+        if (!user) {
+          return;
+        }
+
+        setPresence(user.id, presenceStatus);
+      },
+      [setPresence, user],
+    ),
   });
 
   async function handleCreateRoom(event: FormEvent<HTMLFormElement>) {

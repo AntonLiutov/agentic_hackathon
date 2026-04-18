@@ -4,7 +4,7 @@ Classic web chat platform built for the AI Herders Jam requirements.
 
 ## Current Status
 
-Sprint 1 is complete and Sprint 2 is implemented through unread indicators. The repository now includes:
+Sprint 1 is complete and Sprint 2 is complete. The repository now includes:
 
 - planning and architecture docs
 - backend and frontend application skeletons
@@ -33,6 +33,8 @@ Sprint 1 is complete and Sprint 2 is implemented through unread indicators. The 
 - reconnect-aware realtime status in the room and DM workspaces
 - unread badges for rooms and direct messages
 - read-state clearing when a room or DM is opened
+- multi-tab presence heartbeat with `online`, `AFK`, and `offline` derivation
+- presence shown in room member lists and direct-message surfaces
 - sidebar navigation from non-chat routes into the correct chat workspace
 - privacy-safe conversation lists that no longer expose other users' email addresses
 
@@ -139,9 +141,12 @@ Basic checks after startup:
 25. Open that unread room or DM and confirm the unread badge clears after the conversation loads.
 26. From `/app/contacts`, click a room in the left sidebar and confirm the app navigates into `/app/chats` with that room selected.
 27. Refresh one of the conversation tabs and confirm the workspace reconnects and returns to `live updates`.
-28. Use the workspace sign-out action and confirm protected routes redirect back to `/signin`.
-29. Open `http://localhost:8000/healthz` and confirm the API returns `status: ok`.
-30. Open `http://localhost:3000/` and confirm the frontend responds.
+28. Open the same account in two tabs and keep one tab active. Confirm room members and direct-message surfaces show that user as `online`.
+29. Leave both tabs idle for more than one minute and confirm the status changes to `AFK`.
+30. Close all tabs for that account, wait for the heartbeat TTL window, and confirm the user eventually appears `offline`.
+31. Use the workspace sign-out action and confirm protected routes redirect back to `/signin`.
+32. Open `http://localhost:8000/healthz` and confirm the API returns `status: ok`.
+33. Open `http://localhost:3000/` and confirm the frontend responds.
 
 Stop the stack:
 
@@ -167,5 +172,6 @@ This repository currently targets:
 - `SP2-05 Message History and Infinite Scroll`
 - `SP2-06 Realtime Delivery`
 - `SP2-07 Unread Indicators`
+- `SP2-08 Presence`
 
-The next implementation step is `SP2-08 Presence`.
+The next implementation step is Sprint 3: friendships, moderation surface expansion, attachments, and broader hardening.

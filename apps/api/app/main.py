@@ -5,6 +5,7 @@ from app.api.routes.auth import router as auth_router
 from app.api.routes.dms import router as dms_router
 from app.api.routes.health import router as health_router
 from app.api.routes.messages import router as messages_router
+from app.api.routes.presence import router as presence_router
 from app.api.routes.realtime import router as realtime_router
 from app.api.routes.rooms import router as rooms_router
 from app.core.config import get_settings
@@ -41,6 +42,10 @@ openapi_tags = [
         "name": "realtime",
         "description": "Authenticated WebSocket delivery for live conversation updates.",
     },
+    {
+        "name": "presence",
+        "description": "Multi-tab user presence heartbeat and low-latency presence updates.",
+    },
 ]
 
 app = FastAPI(
@@ -70,6 +75,7 @@ app.include_router(auth_router)
 app.include_router(dms_router)
 app.include_router(health_router)
 app.include_router(messages_router)
+app.include_router(presence_router)
 app.include_router(realtime_router)
 app.include_router(rooms_router)
 

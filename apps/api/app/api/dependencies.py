@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import Settings
 from app.db.session import DatabaseManager
+from app.presence.service import PresenceService
 from app.realtime.manager import RealtimeConnectionManager
 
 
@@ -20,6 +21,10 @@ def get_database_manager(request: Request) -> DatabaseManager:
 
 def get_realtime_manager(request: Request) -> RealtimeConnectionManager:
     return request.app.state.realtime
+
+
+def get_presence_service(request: Request) -> PresenceService:
+    return request.app.state.presence
 
 
 async def get_db_session(request: Request) -> AsyncIterator[AsyncSession]:

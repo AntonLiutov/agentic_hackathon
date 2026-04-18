@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 
+import type { PresenceStatus } from "../api/presence";
 import { env } from "../config/env";
 
 type InboxRealtimeStatus = "idle" | "connecting" | "live" | "reconnecting" | "offline";
@@ -7,6 +8,7 @@ type InboxRealtimeStatus = "idle" | "connecting" | "live" | "reconnecting" | "of
 type UseInboxRealtimeOptions = {
   enabled: boolean;
   onUnread: (conversationId: string, sequenceHead: number) => void;
+  onPresence?: (userId: string, presenceStatus: PresenceStatus) => void;
   onConnected?: () => void;
 };
 
@@ -20,12 +22,18 @@ type InboxEnvelope =
       sequence_head: number;
     }
   | {
+      type: "presence.updated";
+      user_id: string;
+      presence_status: PresenceStatus;
+    }
+  | {
       type: "pong";
     };
 
 export function useInboxRealtime({
   enabled,
   onUnread,
+  onPresence,
   onConnected,
 }: UseInboxRealtimeOptions) {
   const [status, setStatus] = useState<InboxRealtimeStatus>("idle");
@@ -34,15 +42,17 @@ export function useInboxRealtime({
   const reconnectAttemptRef = useRef(0);
   const handlersRef = useRef({
     onUnread,
+    onPresence,
     onConnected,
   });
 
   useEffect(() => {
     handlersRef.current = {
       onUnread,
+      onPresence,
       onConnected,
     };
-  }, [onConnected, onUnread]);
+  }, [onConnected, onPresence, onUnread]);
 
   useEffect(() => {
     if (!enabled || typeof WebSocket === "undefined") {
@@ -83,6 +93,11 @@ export function useInboxRealtime({
 
         if (payload.type === "conversation.unread") {
           handlersRef.current.onUnread(payload.conversation_id, payload.sequence_head);
+          return;
+        }
+
+        if (payload.type === "presence.updated") {
+          handlersRef.current.onPresence?.(payload.user_id, payload.presence_status);
         }
       };
 

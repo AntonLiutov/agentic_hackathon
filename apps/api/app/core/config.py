@@ -30,6 +30,10 @@ class Settings(BaseSettings):
     smtp_password: str | None = None
     smtp_from_email: str = "no-reply@agentic.chat"
     smtp_from_name: str = "Agentic Chat"
+    presence_heartbeat_ttl_seconds: int = 75
+    presence_afk_timeout_seconds: int = 60
+    presence_sweep_interval_seconds: int = 10
+    presence_sweep_enabled: bool = True
 
     model_config = SettingsConfigDict(
         env_file=".env",

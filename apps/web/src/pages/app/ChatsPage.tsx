@@ -9,6 +9,7 @@ import {
 } from "react";
 
 import { useRooms } from "../../features/rooms/use-rooms";
+import { usePresence } from "../../features/presence/use-presence";
 import { useSession } from "../../features/session/use-session";
 import { ApiError, getApiErrorMessage } from "../../shared/api/client";
 import {
@@ -37,6 +38,10 @@ function getReplyPreview(message: ConversationMessage) {
   return `${message.reply_to_message.author_username}: ${message.reply_to_message.body_text ?? ""}`;
 }
 
+function formatPresenceLabel(presenceStatus: "online" | "afk" | "offline") {
+  return presenceStatus === "afk" ? "AFK" : presenceStatus;
+}
+
 const MESSAGE_PAGE_SIZE = 30;
 
 function upsertConversationMessage(
@@ -53,6 +58,7 @@ function upsertConversationMessage(
 
 export function ChatsPage() {
   const { user } = useSession();
+  const { getPresence, setMany } = usePresence();
   const {
     clearUnread,
     inviteToRoom,
@@ -184,6 +190,19 @@ export function ChatsPage() {
       isCancelled = true;
     };
   }, [selectedRoom?.id, selectedRoom?.is_member, selectedRoom?.can_manage_members]);
+
+  useEffect(() => {
+    if (members.length === 0) {
+      return;
+    }
+
+    setMany(
+      members.map((member) => ({
+        userId: member.id,
+        status: member.presence_status,
+      })),
+    );
+  }, [members, setMany]);
 
   useEffect(() => {
     let isCancelled = false;
@@ -886,8 +905,20 @@ export function ChatsPage() {
                   <li key={member.id} className="room-people-item">
                     <div>
                       <strong>{member.username}</strong>
-                      <small>
-                        {member.is_owner ? "Owner" : member.is_admin ? "Admin" : "Member"}
+                      <small className="presence-meta">
+                        <span>
+                          {member.is_owner ? "Owner" : member.is_admin ? "Admin" : "Member"}
+                        </span>
+                        <span className="presence-inline">
+                          <span
+                            className={`presence-dot presence-dot--${
+                              getPresence(member.id) ?? member.presence_status ?? "offline"
+                            }`}
+                          />
+                          {formatPresenceLabel(
+                            getPresence(member.id) ?? member.presence_status ?? "offline",
+                          )}
+                        </span>
                       </small>
                     </div>
                     {member.can_remove ? (
