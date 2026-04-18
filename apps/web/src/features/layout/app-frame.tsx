@@ -14,87 +14,46 @@ const appNavItems = [
 
 function WorkspaceContextCard() {
   const location = useLocation();
-  const { invitations, selectedRoom } = useRooms();
+  const { invitations } = useRooms();
 
-  const heading = location.pathname.startsWith("/app/chats")
-    ? selectedRoom
-      ? `#${selectedRoom.name}`
-      : "Room info"
-    : location.pathname.startsWith("/app/contacts")
-      ? "Contacts panel"
-      : location.pathname.startsWith("/app/sessions")
-        ? "Session details"
-        : "Profile summary";
+  if (location.pathname.startsWith("/app/chats")) {
+    return null;
+  }
+  const heading = location.pathname.startsWith("/app/contacts")
+    ? "Contacts panel"
+    : location.pathname.startsWith("/app/sessions")
+      ? "Session details"
+      : "Profile summary";
 
   return (
     <aside className="workspace-context">
       <h3>{heading}</h3>
+      <p>
+        This panel is the reserved space for contacts, sessions, and profile controls as the
+        product grows.
+      </p>
 
-      {location.pathname.startsWith("/app/chats") && selectedRoom ? (
-        <>
-          <p>{selectedRoom.description ?? "No room description yet."}</p>
-
-          <div className="context-block">
-            <strong>Room details</strong>
-            <ul>
-              <li>
-                <span>Visibility</span>
-                <small>{selectedRoom.visibility}</small>
+      <div className="context-block">
+        <strong>Pending invitations</strong>
+        {invitations.length === 0 ? (
+          <p>No private-room invitations waiting right now.</p>
+        ) : (
+          <ul>
+            {invitations.map((invitation) => (
+              <li key={invitation.id}>
+                <span>#{invitation.room_name}</span>
+                <small>{invitation.inviter_username ?? "Unknown inviter"}</small>
               </li>
-              <li>
-                <span>Members</span>
-                <small>{selectedRoom.member_count}</small>
-              </li>
-              <li>
-                <span>Membership</span>
-                <small>{selectedRoom.is_member ? "Joined" : "Not joined"}</small>
-              </li>
-              <li>
-                <span>Owner controls</span>
-                <small>{selectedRoom.is_owner ? "Enabled" : "Viewer"}</small>
-              </li>
-            </ul>
-          </div>
-
-          {selectedRoom.visibility === "private" ? (
-            <div className="context-block">
-              <strong>Private-room notes</strong>
-              <p>
-                Private rooms stay out of the public catalog. Membership grows through invitation
-                acceptance, not open join.
-              </p>
-            </div>
-          ) : null}
-        </>
-      ) : (
-        <>
-          <p>
-            This panel is the reserved space for room metadata, member status, session management,
-            and profile controls as the product grows.
-          </p>
-
-          <div className="context-block">
-            <strong>Pending invitations</strong>
-            {invitations.length === 0 ? (
-              <p>No private-room invitations waiting right now.</p>
-            ) : (
-              <ul>
-                {invitations.map((invitation) => (
-                  <li key={invitation.id}>
-                    <span>#{invitation.room_name}</span>
-                    <small>{invitation.inviter_username ?? "Unknown inviter"}</small>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
-        </>
-      )}
+            ))}
+          </ul>
+        )}
+      </div>
     </aside>
   );
 }
 
 export function AppFrame() {
+  const location = useLocation();
   const { user, signOut } = useSession();
   const {
     acceptInvitation,
@@ -112,6 +71,7 @@ export function AppFrame() {
     selectedRoomId,
     setSearchTerm,
   } = useRooms();
+  const visiblePublicRooms = publicRooms.filter((room) => !room.is_banned);
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [newRoomName, setNewRoomName] = useState("");
   const [newRoomDescription, setNewRoomDescription] = useState("");
@@ -209,7 +169,13 @@ export function AppFrame() {
         </div>
       </header>
 
-      <div className="workspace-grid">
+      <div
+        className={
+          location.pathname.startsWith("/app/chats")
+            ? "workspace-grid workspace-grid--chat"
+            : "workspace-grid"
+        }
+      >
         <aside className="workspace-sidebar">
           <label className="sidebar-search">
             <span>Search public rooms</span>
@@ -298,9 +264,7 @@ export function AppFrame() {
                       onClick={() => selectRoom(room.id)}
                     >
                       <span>#{room.name}</span>
-                      <small>
-                        {room.visibility} • {room.member_count}
-                      </small>
+                      <small>{room.visibility} | {room.member_count}</small>
                     </button>
                   </li>
                 ))}
@@ -311,15 +275,15 @@ export function AppFrame() {
           <section className="sidebar-section">
             <div className="sidebar-heading">
               <h3>Public Rooms</h3>
-              <small>{publicRooms.length} found</small>
+              <small>{visiblePublicRooms.length} found</small>
             </div>
             {isLoading ? (
               <p className="sidebar-empty">Loading public rooms...</p>
-            ) : publicRooms.length === 0 ? (
+            ) : visiblePublicRooms.length === 0 ? (
               <p className="sidebar-empty">No public rooms match this search right now.</p>
             ) : (
               <ul className="sidebar-room-list">
-                {publicRooms.map((room) => (
+                {visiblePublicRooms.map((room) => (
                   <li key={room.id} className="sidebar-room-item">
                     <button
                       type="button"
@@ -339,8 +303,6 @@ export function AppFrame() {
                       >
                         Open
                       </button>
-                    ) : room.is_banned ? (
-                      <span className="sidebar-muted">Access revoked</span>
                     ) : (
                       <button
                         className="ghost-button sidebar-action-button"

@@ -32,9 +32,11 @@ class RoomSummaryResponse(BaseModel):
     member_count: int
     is_member: bool
     is_owner: bool
+    is_admin: bool = False
     is_banned: bool = False
     can_join: bool
     can_leave: bool
+    can_manage_members: bool = False
     joined_at: datetime | None = None
 
 
@@ -70,6 +72,34 @@ class RoomInvitationResponse(BaseModel):
 
 class RoomInvitationListResponse(BaseModel):
     invitations: list[RoomInvitationResponse]
+
+
+class RoomMemberResponse(BaseModel):
+    id: UUID
+    username: str
+    email: str
+    joined_at: datetime
+    is_owner: bool
+    is_admin: bool
+    can_remove: bool
+
+
+class RoomMemberListResponse(BaseModel):
+    members: list[RoomMemberResponse]
+
+
+class RoomBanResponse(BaseModel):
+    id: UUID
+    user_id: UUID
+    username: str
+    email: str
+    banned_at: datetime
+    banned_by_username: str | None
+    reason: str | None
+
+
+class RoomBanListResponse(BaseModel):
+    bans: list[RoomBanResponse]
 
 
 class CreateRoomInvitationRequest(BaseModel):

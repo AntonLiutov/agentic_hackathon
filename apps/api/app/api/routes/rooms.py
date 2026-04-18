@@ -10,9 +10,11 @@ from app.api.schemas.auth import ActionResponse
 from app.api.schemas.rooms import (
     CreateRoomInvitationRequest,
     CreateRoomRequest,
+    RoomBanListResponse,
     RoomInvitationListResponse,
     RoomInvitationResponse,
     RoomListResponse,
+    RoomMemberListResponse,
     RoomSummaryResponse,
 )
 from app.auth.service import get_auth_context
@@ -26,7 +28,10 @@ from app.rooms.service import (
     leave_room,
     list_my_rooms,
     list_public_rooms,
+    list_room_bans,
     list_room_invitations,
+    list_room_members,
+    remove_room_member,
 )
 
 router = APIRouter(prefix="/api/rooms", tags=["rooms"])
@@ -128,6 +133,54 @@ async def get_room(
     return await get_room_summary(db, user=auth_context.user, room_id=room_id)
 
 
+@router.get(
+    "/{room_id}/members",
+    response_model=RoomMemberListResponse,
+    summary="List room members",
+    description="Returns the current membership of the room for users who still have access to it.",
+)
+async def get_room_members(
+    room_id: UUID,
+    request: Request,
+    db: AsyncSession = Depends(get_db_session),
+    settings: Settings = Depends(get_settings_from_request),
+) -> RoomMemberListResponse:
+    auth_context = await get_auth_context(
+        db,
+        settings=settings,
+        session_token=request.cookies.get(settings.session_cookie_name),
+        touch_session=True,
+        required=True,
+    )
+    return RoomMemberListResponse(
+        members=await list_room_members(db, user=auth_context.user, room_id=room_id)
+    )
+
+
+@router.get(
+    "/{room_id}/bans",
+    response_model=RoomBanListResponse,
+    summary="List banned users for a room",
+    description="Returns the room ban list for users who can manage room membership.",
+)
+async def get_room_bans(
+    room_id: UUID,
+    request: Request,
+    db: AsyncSession = Depends(get_db_session),
+    settings: Settings = Depends(get_settings_from_request),
+) -> RoomBanListResponse:
+    auth_context = await get_auth_context(
+        db,
+        settings=settings,
+        session_token=request.cookies.get(settings.session_cookie_name),
+        touch_session=True,
+        required=True,
+    )
+    return RoomBanListResponse(
+        bans=await list_room_bans(db, user=auth_context.user, room_id=room_id)
+    )
+
+
 @router.post(
     "/{room_id}/join",
     response_model=RoomSummaryResponse,
@@ -170,6 +223,37 @@ async def leave_selected_room(
         required=True,
     )
     return await leave_room(db, user=auth_context.user, room_id=room_id)
+
+
+@router.delete(
+    "/{room_id}/members/{member_user_id}",
+    response_model=ActionResponse,
+    summary="Remove a room member",
+    description=(
+        "Removes a member from the room and treats the action as a ban so the user cannot "
+        "rejoin without later administrative changes."
+    ),
+)
+async def remove_member(
+    room_id: UUID,
+    member_user_id: UUID,
+    request: Request,
+    db: AsyncSession = Depends(get_db_session),
+    settings: Settings = Depends(get_settings_from_request),
+) -> ActionResponse:
+    auth_context = await get_auth_context(
+        db,
+        settings=settings,
+        session_token=request.cookies.get(settings.session_cookie_name),
+        touch_session=False,
+        required=True,
+    )
+    return await remove_room_member(
+        db,
+        actor=auth_context.user,
+        room_id=room_id,
+        member_user_id=member_user_id,
+    )
 
 
 @router.get(
