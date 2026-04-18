@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Annotated
 from uuid import UUID
 
@@ -57,6 +58,20 @@ class LoginRequest(BaseModel):
 
 class AuthSessionResponse(BaseModel):
     user: AuthUserResponse
+
+
+class UserSessionResponse(BaseModel):
+    id: UUID
+    user_agent: str | None
+    ip_address: str | None
+    created_at: datetime
+    last_seen_at: datetime | None
+    expires_at: datetime
+    is_current: bool
+
+
+class UserSessionsResponse(BaseModel):
+    sessions: list[UserSessionResponse]
 
 
 class LogoutResponse(BaseModel):

@@ -10,6 +10,20 @@ export type AuthSessionResponse = {
   user: AuthUser;
 };
 
+export type ActiveSession = {
+  id: string;
+  user_agent: string | null;
+  ip_address: string | null;
+  created_at: string;
+  last_seen_at: string | null;
+  expires_at: string;
+  is_current: boolean;
+};
+
+export type ActiveSessionsResponse = {
+  sessions: ActiveSession[];
+};
+
 export type RegisterPayload = {
   email: string;
   username: string;
@@ -36,5 +50,10 @@ export const authApi = {
   signOut: () =>
     apiRequest<{ success: boolean }>("/api/auth/logout", {
       method: "POST",
+    }),
+  listSessions: () => apiRequest<ActiveSessionsResponse>("/api/auth/sessions"),
+  revokeSession: (sessionId: string) =>
+    apiRequest<{ success: boolean }>(`/api/auth/sessions/${sessionId}`, {
+      method: "DELETE",
     }),
 };

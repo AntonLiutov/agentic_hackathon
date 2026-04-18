@@ -2,13 +2,14 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from uuid import UUID
 
 from fastapi import HTTPException, Request, Response, status
 from sqlalchemy import and_, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.schemas.auth import LoginRequest, RegisterRequest
+from app.api.schemas.auth import LoginRequest, RegisterRequest, UserSessionResponse
 from app.auth.security import (
     generate_session_token,
     hash_password,
@@ -237,4 +238,70 @@ async def revoke_session(
         return
 
     auth_context.session.revoked_at = _utc_now()
+    await db.commit()
+
+
+async def list_active_sessions(
+    db: AsyncSession,
+    *,
+    auth_context: AuthContext,
+) -> list[UserSessionResponse]:
+    now = _utc_now()
+    query = (
+        select(UserSession)
+        .where(
+            and_(
+                UserSession.user_id == auth_context.user.id,
+                UserSession.revoked_at.is_(None),
+                UserSession.expires_at > now,
+            )
+        )
+        .order_by(UserSession.created_at.desc())
+    )
+    sessions = (await db.execute(query)).scalars().all()
+
+    return [
+        UserSessionResponse(
+            id=session.id,
+            user_agent=session.user_agent,
+            ip_address=session.ip_address,
+            created_at=session.created_at,
+            last_seen_at=session.last_seen_at,
+            expires_at=session.expires_at,
+            is_current=session.id == auth_context.session.id,
+        )
+        for session in sessions
+    ]
+
+
+async def revoke_session_by_id(
+    db: AsyncSession,
+    *,
+    auth_context: AuthContext,
+    session_id: UUID,
+) -> None:
+    if session_id == auth_context.session.id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Use sign out to end the current browser session.",
+        )
+
+    now = _utc_now()
+    query = select(UserSession).where(
+        and_(
+            UserSession.id == session_id,
+            UserSession.user_id == auth_context.user.id,
+            UserSession.revoked_at.is_(None),
+            UserSession.expires_at > now,
+        )
+    )
+    session_to_revoke = (await db.execute(query)).scalars().first()
+
+    if session_to_revoke is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Active session not found.",
+        )
+
+    session_to_revoke.revoked_at = now
     await db.commit()

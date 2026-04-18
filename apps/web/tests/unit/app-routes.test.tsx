@@ -150,4 +150,82 @@ describe("App routes", () => {
       ).toBeInTheDocument();
     });
   });
+
+  it("shows active sessions and revokes a selected session", async () => {
+    let sessions = [
+      {
+        id: "session-current",
+        user_agent: "Mozilla/5.0 Chrome/135.0",
+        ip_address: "127.0.0.1",
+        created_at: "2026-04-18T08:00:00Z",
+        last_seen_at: "2026-04-18T08:05:00Z",
+        expires_at: "2026-05-18T08:00:00Z",
+        is_current: true,
+      },
+      {
+        id: "session-other",
+        user_agent: "Mozilla/5.0 Firefox/138.0",
+        ip_address: "10.10.10.10",
+        created_at: "2026-04-18T07:00:00Z",
+        last_seen_at: "2026-04-18T07:30:00Z",
+        expires_at: "2026-05-18T07:00:00Z",
+        is_current: false,
+      },
+    ];
+
+    fetchMock.mockImplementation(async (input, init) => {
+      const url = typeof input === "string" ? input : input.toString();
+
+      if (url.endsWith("/api/auth/me")) {
+        return new Response(
+          JSON.stringify({
+            user: {
+              id: "user-1",
+              username: "Preview User",
+              email: "preview@agentic.chat",
+            },
+          }),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          },
+        );
+      }
+
+      if (url.endsWith("/api/auth/sessions") && (!init?.method || init.method === "GET")) {
+        return new Response(JSON.stringify({ sessions }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      if (url.endsWith("/api/auth/sessions/session-other") && init?.method === "DELETE") {
+        sessions = sessions.filter((session) => session.id !== "session-other");
+        return new Response(JSON.stringify({ success: true }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      return new Response(JSON.stringify({ detail: "Unhandled request in test." }), {
+        status: 500,
+        headers: { "Content-Type": "application/json" },
+      });
+    });
+
+    renderRoutes(["/app/sessions"]);
+
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { name: "Active sessions" })).toBeInTheDocument();
+      expect(screen.getByRole("heading", { name: "Chrome browser" })).toBeInTheDocument();
+      expect(screen.getByRole("heading", { name: "Firefox browser" })).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Revoke" }));
+
+    await waitFor(() => {
+      expect(screen.getByText("Selected session was revoked.")).toBeInTheDocument();
+      expect(screen.queryByRole("heading", { name: "Firefox browser" })).not.toBeInTheDocument();
+    });
+  });
 });
