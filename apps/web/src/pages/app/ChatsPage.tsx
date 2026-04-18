@@ -2,33 +2,52 @@ import { type FormEvent, useEffect, useState } from "react";
 
 import { useRooms } from "../../features/rooms/use-rooms";
 import { ApiError, getApiErrorMessage } from "../../shared/api/client";
+import {
+  messagesApi,
+  type ConversationMessage,
+} from "../../shared/api/messages";
 import { roomsApi, type RoomBan, type RoomMember } from "../../shared/api/rooms";
 
-const sampleMessages = [
-  { author: "Bob", time: "10:21", body: "Hello team" },
-  { author: "Alice", time: "10:22", body: "Uploading spec" },
-  { author: "You", time: "10:23", body: "Here is the working foundation for the app shell." },
-];
+function formatMessageTime(value: string) {
+  return new Date(value).toLocaleTimeString([], {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+function getReplyPreview(message: ConversationMessage) {
+  if (!message.reply_to_message) {
+    return null;
+  }
+
+  if (message.reply_to_message.deleted_at) {
+    return `${message.reply_to_message.author_username}: Message deleted`;
+  }
+
+  return `${message.reply_to_message.author_username}: ${message.reply_to_message.body_text ?? ""}`;
+}
 
 export function ChatsPage() {
-  const {
-    inviteToRoom,
-    joinRoom,
-    leaveRoom,
-    refreshRooms,
-    selectedRoom,
-  } = useRooms();
+  const { inviteToRoom, joinRoom, leaveRoom, refreshRooms, selectedRoom } = useRooms();
   const [inviteUsername, setInviteUsername] = useState("");
   const [inviteMessage, setInviteMessage] = useState("");
   const [members, setMembers] = useState<RoomMember[]>([]);
   const [bans, setBans] = useState<RoomBan[]>([]);
+  const [messages, setMessages] = useState<ConversationMessage[]>([]);
+  const [sequenceHead, setSequenceHead] = useState(0);
+  const [composeText, setComposeText] = useState("");
+  const [replyTarget, setReplyTarget] = useState<ConversationMessage | null>(null);
+  const [editingMessageId, setEditingMessageId] = useState<number | null>(null);
   const [isLoadingPeople, setIsLoadingPeople] = useState(false);
+  const [isLoadingMessages, setIsLoadingMessages] = useState(false);
   const [panelError, setPanelError] = useState<string | null>(null);
   const [panelNotice, setPanelNotice] = useState<string | null>(null);
   const [isSubmittingInvite, setIsSubmittingInvite] = useState(false);
   const [isJoiningRoom, setIsJoiningRoom] = useState(false);
   const [isLeavingRoom, setIsLeavingRoom] = useState(false);
+  const [isSubmittingMessage, setIsSubmittingMessage] = useState(false);
   const [removingMemberId, setRemovingMemberId] = useState<string | null>(null);
+  const [updatingMessageId, setUpdatingMessageId] = useState<number | null>(null);
 
   useEffect(() => {
     let isCancelled = false;
@@ -49,9 +68,7 @@ export function ChatsPage() {
       try {
         const [memberResponse, banResponse] = await Promise.all([
           roomsApi.listMembers(activeRoomId),
-          canManageMembers
-            ? roomsApi.listBans(activeRoomId)
-            : Promise.resolve({ bans: [] }),
+          canManageMembers ? roomsApi.listBans(activeRoomId) : Promise.resolve({ bans: [] }),
         ]);
 
         if (isCancelled) {
@@ -85,6 +102,65 @@ export function ChatsPage() {
       isCancelled = true;
     };
   }, [selectedRoom?.id, selectedRoom?.is_member, selectedRoom?.can_manage_members]);
+
+  useEffect(() => {
+    let isCancelled = false;
+    const activeRoomId = selectedRoom?.id;
+    const isMember = selectedRoom?.is_member ?? false;
+
+    async function loadMessages() {
+      if (!activeRoomId || !isMember) {
+        setMessages([]);
+        setSequenceHead(0);
+        setReplyTarget(null);
+        setEditingMessageId(null);
+        setComposeText("");
+        setIsLoadingMessages(false);
+        return;
+      }
+
+      setIsLoadingMessages(true);
+
+      try {
+        const response = await messagesApi.list(activeRoomId);
+
+        if (isCancelled) {
+          return;
+        }
+
+        setMessages(response.messages);
+        setSequenceHead(response.sequence_head);
+      } catch (error) {
+        if (isCancelled) {
+          return;
+        }
+
+        if (error instanceof ApiError && (error.status === 403 || error.status === 404)) {
+          await refreshRooms();
+          setPanelError("You no longer have access to that room.");
+          return;
+        }
+
+        setPanelError(getApiErrorMessage(error, "Unable to load conversation messages right now."));
+      } finally {
+        if (!isCancelled) {
+          setIsLoadingMessages(false);
+        }
+      }
+    }
+
+    void loadMessages();
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [selectedRoom?.id, selectedRoom?.is_member]);
+
+  function resetComposerState() {
+    setComposeText("");
+    setReplyTarget(null);
+    setEditingMessageId(null);
+  }
 
   async function handleInvite(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -124,6 +200,8 @@ export function ChatsPage() {
     try {
       await leaveRoom(selectedRoom.id);
       setPanelNotice(`You left #${selectedRoom.name}.`);
+      resetComposerState();
+      setMessages([]);
     } catch (error) {
       setPanelError(getApiErrorMessage(error, "Unable to leave that room right now."));
     } finally {
@@ -178,6 +256,84 @@ export function ChatsPage() {
       setPanelError(getApiErrorMessage(error, "Unable to remove that member right now."));
     } finally {
       setRemovingMemberId(null);
+    }
+  }
+
+  async function handleSubmitMessage(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    if (!selectedRoom || !composeText.trim()) {
+      return;
+    }
+
+    setPanelError(null);
+    setPanelNotice(null);
+    setIsSubmittingMessage(true);
+
+    try {
+      if (editingMessageId !== null) {
+        const updatedMessage = await messagesApi.edit(editingMessageId, {
+          body_text: composeText,
+        });
+        setMessages((currentMessages) =>
+          currentMessages.map((message) =>
+            message.id === updatedMessage.id ? updatedMessage : message,
+          ),
+        );
+        setPanelNotice("Message updated.");
+      } else {
+        const createdMessage = await messagesApi.create(selectedRoom.id, {
+          body_text: composeText,
+          reply_to_message_id: replyTarget?.id,
+        });
+        setMessages((currentMessages) => [...currentMessages, createdMessage]);
+        setSequenceHead(createdMessage.sequence_number);
+      }
+
+      resetComposerState();
+    } catch (error) {
+      setPanelError(getApiErrorMessage(error, "Unable to save that message right now."));
+    } finally {
+      setIsSubmittingMessage(false);
+    }
+  }
+
+  function handleReply(message: ConversationMessage) {
+    setEditingMessageId(null);
+    setReplyTarget(message);
+    setComposeText("");
+    setPanelError(null);
+    setPanelNotice(null);
+  }
+
+  function handleEdit(message: ConversationMessage) {
+    setReplyTarget(null);
+    setEditingMessageId(message.id);
+    setComposeText(message.body_text ?? "");
+    setPanelError(null);
+    setPanelNotice(null);
+  }
+
+  async function handleDelete(message: ConversationMessage) {
+    setPanelError(null);
+    setPanelNotice(null);
+    setUpdatingMessageId(message.id);
+
+    try {
+      const deletedMessage = await messagesApi.delete(message.id);
+      setMessages((currentMessages) =>
+        currentMessages.map((currentMessage) =>
+          currentMessage.id === deletedMessage.id ? deletedMessage : currentMessage,
+        ),
+      );
+
+      if (editingMessageId === message.id || replyTarget?.id === message.id) {
+        resetComposerState();
+      }
+    } catch (error) {
+      setPanelError(getApiErrorMessage(error, "Unable to delete that message right now."));
+    } finally {
+      setUpdatingMessageId(null);
     }
   }
 
@@ -286,7 +442,7 @@ export function ChatsPage() {
           <h1>#{selectedRoom.name}</h1>
           <p>
             {selectedRoom.description ??
-              "Room created and ready for the next milestone of message history and realtime updates."}
+              "Room conversation is now backed by real persisted messages, edits, deletes, and reply references."}
           </p>
         </div>
 
@@ -295,6 +451,7 @@ export function ChatsPage() {
           <span className="status-pill status-pill--neutral">
             {selectedRoom.member_count} member{selectedRoom.member_count === 1 ? "" : "s"}
           </span>
+          <span className="status-pill status-pill--neutral">sequence {sequenceHead}</span>
           {selectedRoom.can_leave ? (
             <button
               className="ghost-button"
@@ -315,39 +472,127 @@ export function ChatsPage() {
 
       <div className="chat-room-layout">
         <div className="chat-room-main">
-          <div className="message-list">
-            {sampleMessages.map((message) => (
-              <article key={`${message.time}-${message.author}`} className="message-card">
-                <header>
-                  <strong>{message.author}</strong>
-                  <time>{message.time}</time>
-                </header>
-                <p>{message.body}</p>
-              </article>
-            ))}
-          </div>
+          {isLoadingMessages ? (
+            <p>Loading messages...</p>
+          ) : messages.length === 0 ? (
+            <div className="feature-list">
+              <li>This room has no messages yet.</li>
+              <li>Send the first message, reply to it, and edit or delete it from the message list.</li>
+            </div>
+          ) : (
+            <div className="message-list">
+              {messages.map((message) => (
+                <article key={message.id} className="message-card">
+                  {message.reply_to_message ? (
+                    <div className="message-reply-reference">
+                      <strong>Replying to</strong>
+                      <p>{getReplyPreview(message)}</p>
+                    </div>
+                  ) : null}
+                  <header>
+                    <strong>{message.author_username}</strong>
+                    <div className="message-meta">
+                      <time>{formatMessageTime(message.created_at)}</time>
+                      {message.is_edited ? <span className="message-flag">edited</span> : null}
+                      <span className="message-flag">#{message.sequence_number}</span>
+                    </div>
+                  </header>
+                  <p className={message.is_deleted ? "message-body message-body--deleted" : "message-body"}>
+                    {message.is_deleted ? "Message deleted." : message.body_text}
+                  </p>
+                  {!message.is_deleted ? (
+                    <div className="message-actions">
+                      <button
+                        className="ghost-button"
+                        type="button"
+                        onClick={() => handleReply(message)}
+                      >
+                        Reply
+                      </button>
+                      {message.can_edit ? (
+                        <button
+                          className="ghost-button"
+                          type="button"
+                          onClick={() => handleEdit(message)}
+                        >
+                          Edit
+                        </button>
+                      ) : null}
+                      {message.can_delete ? (
+                        <button
+                          className="ghost-button"
+                          type="button"
+                          disabled={updatingMessageId === message.id}
+                          onClick={() => {
+                            void handleDelete(message);
+                          }}
+                        >
+                          {updatingMessageId === message.id ? "Deleting..." : "Delete"}
+                        </button>
+                      ) : null}
+                    </div>
+                  ) : null}
+                </article>
+              ))}
+            </div>
+          )}
 
           <footer className="composer-shell">
-            <div className="composer-toolbar">
-              <button type="button">Attach</button>
-              <button type="button">Reply</button>
-              <span>
-                Messaging is the next Sprint 2 milestone. This room panel is now backed by real
-                room membership data.
-              </span>
-            </div>
-            <textarea
-              rows={4}
-              placeholder="Message input will connect after room messaging APIs land."
-            />
-            <div className="composer-actions">
-              <button className="ghost-button" type="button">
-                Save draft later
-              </button>
-              <button className="primary-button" type="button">
-                Send
-              </button>
-            </div>
+            <form className="composer-form" onSubmit={handleSubmitMessage}>
+              <div className="composer-toolbar">
+                <button type="button">Attach</button>
+                <span>
+                  {editingMessageId !== null
+                    ? "Editing an existing message."
+                    : "Room messages now persist with replies, edits, deletes, and continuity sequence numbers."}
+                </span>
+              </div>
+              {replyTarget ? (
+                <div className="composer-context-banner">
+                  <span>Replying to {replyTarget.author_username}</span>
+                  <button
+                    className="ghost-button"
+                    type="button"
+                    onClick={() => setReplyTarget(null)}
+                  >
+                    Clear
+                  </button>
+                </div>
+              ) : null}
+              {editingMessageId !== null ? (
+                <div className="composer-context-banner">
+                  <span>Editing message #{editingMessageId}</span>
+                  <button
+                    className="ghost-button"
+                    type="button"
+                    onClick={() => resetComposerState()}
+                  >
+                    Cancel edit
+                  </button>
+                </div>
+              ) : null}
+              <textarea
+                rows={4}
+                maxLength={3072}
+                placeholder="Write a message"
+                value={composeText}
+                onChange={(event) => setComposeText(event.target.value)}
+              />
+              <div className="composer-actions">
+                <button className="ghost-button" type="button" onClick={() => resetComposerState()}>
+                  Clear
+                </button>
+                <button className="primary-button" type="submit" disabled={isSubmittingMessage}>
+                  {isSubmittingMessage
+                    ? editingMessageId !== null
+                      ? "Saving..."
+                      : "Sending..."
+                    : editingMessageId !== null
+                      ? "Save edit"
+                      : "Send"}
+                </button>
+              </div>
+            </form>
           </footer>
         </div>
 
@@ -426,11 +671,7 @@ export function ChatsPage() {
                     <div>
                       <strong>{member.username}</strong>
                       <small>
-                        {member.is_owner
-                          ? "Owner"
-                          : member.is_admin
-                            ? "Admin"
-                            : "Member"}
+                        {member.is_owner ? "Owner" : member.is_admin ? "Admin" : "Member"}
                       </small>
                     </div>
                     {member.can_remove ? (

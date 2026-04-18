@@ -21,6 +21,8 @@ from sqlalchemy.orm import Mapped, mapped_column
 from app.db.base import Base
 from app.db.models.mixins import TimestampMixin
 
+MESSAGE_ID_TYPE = BigInteger().with_variant(Integer, "sqlite")
+
 
 class Message(Base):
     __tablename__ = "messages"
@@ -31,7 +33,7 @@ class Message(Base):
         Index("ix_messages_conversation_id_id", "conversation_id", "id"),
     )
 
-    id: Mapped[int] = mapped_column(BigInteger, Identity(always=True), primary_key=True)
+    id: Mapped[int] = mapped_column(MESSAGE_ID_TYPE, Identity(always=True), primary_key=True)
     conversation_id: Mapped[uuid.UUID] = mapped_column(
         Uuid,
         ForeignKey("conversations.id", ondelete="CASCADE"),
@@ -47,7 +49,7 @@ class Message(Base):
     sequence_number: Mapped[int] = mapped_column(BigInteger, nullable=False)
     body_text: Mapped[str | None] = mapped_column(Text, nullable=True)
     reply_to_message_id: Mapped[int | None] = mapped_column(
-        BigInteger,
+        MESSAGE_ID_TYPE,
         ForeignKey("messages.id", ondelete="SET NULL"),
         nullable=True,
     )
@@ -81,7 +83,7 @@ class MessageAttachment(Base):
     __tablename__ = "message_attachments"
 
     message_id: Mapped[int] = mapped_column(
-        BigInteger,
+        MESSAGE_ID_TYPE,
         ForeignKey("messages.id", ondelete="CASCADE"),
         primary_key=True,
     )
@@ -106,7 +108,7 @@ class ConversationRead(TimestampMixin, Base):
         primary_key=True,
     )
     last_read_message_id: Mapped[int | None] = mapped_column(
-        BigInteger,
+        MESSAGE_ID_TYPE,
         ForeignKey("messages.id", ondelete="SET NULL"),
         nullable=True,
     )
