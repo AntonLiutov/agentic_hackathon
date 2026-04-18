@@ -10,6 +10,7 @@ Sprint 1 foundation work is in progress. The repository now includes:
 - backend and frontend application skeletons
 - root Docker Compose orchestration
 - health checks and example environment configuration
+- frontend route skeleton for landing, auth, and workspace flows
 
 ## Repository Structure
 
@@ -30,6 +31,7 @@ Sprint 1 foundation work is in progress. The repository now includes:
 2. Run `docker compose up --build` from the repository root.
 3. Open `http://localhost:3000`.
 4. API health is available at `http://localhost:8000/healthz`.
+5. Use the `Sign in` path and choose `Enter workspace preview` to inspect the protected app shell foundation.
 
 ## Local Verification
 
@@ -71,8 +73,9 @@ docker compose up --build
 Basic checks after startup:
 
 1. Open `http://localhost:3000` and confirm the foundation page loads.
-2. Open `http://localhost:8000/healthz` and confirm the API returns `status: ok`.
-3. Open `http://localhost:3000/healthz` and confirm the web container health endpoint responds.
+2. Click `Sign in`, then `Enter workspace preview`, and confirm the routed workspace shell appears.
+3. Open `http://localhost:8000/healthz` and confirm the API returns `status: ok`.
+4. Open `http://localhost:3000/healthz` and confirm the web container health endpoint responds.
 
 Stop the stack:
 
