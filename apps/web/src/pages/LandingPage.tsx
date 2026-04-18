@@ -6,7 +6,7 @@ import { StatusPill } from "../shared/ui/status-pill";
 const highlights = [
   "Protected app shell and route skeleton",
   "Frontend API client conventions",
-  "Session bootstrap and preview sign-in",
+  "Session bootstrap and real cookie auth flow",
   "Classic chat layout foundation",
 ];
 

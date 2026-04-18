@@ -15,6 +15,10 @@ function ProtectedRoute() {
   const { status } = useSession();
   const location = useLocation();
 
+  if (status === "bootstrapping") {
+    return <main className="auth-page">Restoring your session...</main>;
+  }
+
   if (status !== "authenticated") {
     const redirectPath = `${location.pathname}${location.search}${location.hash}`;
     return <Navigate to="/signin" replace state={{ redirectTo: redirectPath }} />;

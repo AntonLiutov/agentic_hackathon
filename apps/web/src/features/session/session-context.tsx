@@ -1,12 +1,11 @@
-import {
-  type PropsWithChildren,
-  createContext,
-  useEffect,
-  useMemo,
-  useState,
-} from "react";
+import { type PropsWithChildren, createContext, useEffect, useMemo, useState } from "react";
+
+import { authApi, type LoginPayload, type RegisterPayload } from "../../shared/api/auth";
+import { ApiError } from "../../shared/api/client";
 
 type SessionUser = {
+  id: string;
+  username: string;
   name: string;
   email: string;
 };
@@ -17,13 +16,22 @@ type SessionState = {
 };
 
 type SessionContextValue = SessionState & {
-  signInPreview: () => void;
-  signOut: () => void;
+  signIn: (payload: LoginPayload) => Promise<void>;
+  register: (payload: RegisterPayload) => Promise<void>;
+  refreshSession: () => Promise<void>;
+  signOut: () => Promise<void>;
 };
 
-const previewSessionKey = "agentic-chat.preview-session";
-
 export const SessionContext = createContext<SessionContextValue | null>(null);
+
+function mapSessionUser(user: { id: string; username: string; email: string }): SessionUser {
+  return {
+    id: user.id,
+    username: user.username,
+    name: user.username,
+    email: user.email,
+  };
+}
 
 export function SessionProvider({ children }: PropsWithChildren) {
   const [state, setState] = useState<SessionState>({
@@ -32,42 +40,76 @@ export function SessionProvider({ children }: PropsWithChildren) {
   });
 
   useEffect(() => {
-    const raw = window.sessionStorage.getItem(previewSessionKey);
+    let isCancelled = false;
 
-    if (raw) {
-      setState({
-        status: "authenticated",
-        user: JSON.parse(raw) as SessionUser,
-      });
-      return;
+    async function bootstrapSession() {
+      try {
+        const payload = await authApi.me();
+
+        if (isCancelled) {
+          return;
+        }
+
+        setState({
+          status: "authenticated",
+          user: mapSessionUser(payload.user),
+        });
+      } catch (error) {
+        if (isCancelled) {
+          return;
+        }
+
+        if (error instanceof ApiError && error.status !== 401) {
+          console.error("Session bootstrap failed.", error);
+        }
+
+        setState({
+          status: "anonymous",
+          user: null,
+        });
+      }
     }
 
-    setState({
-      status: "anonymous",
-      user: null,
-    });
+    void bootstrapSession();
+
+    return () => {
+      isCancelled = true;
+    };
   }, []);
 
   const value = useMemo<SessionContextValue>(
     () => ({
       ...state,
-      signInPreview: () => {
-        const previewUser = {
-          name: "Preview User",
-          email: "preview@agentic.chat",
-        };
-        window.sessionStorage.setItem(previewSessionKey, JSON.stringify(previewUser));
+      signIn: async (payload) => {
+        const response = await authApi.signIn(payload);
         setState({
           status: "authenticated",
-          user: previewUser,
+          user: mapSessionUser(response.user),
         });
       },
-      signOut: () => {
-        window.sessionStorage.removeItem(previewSessionKey);
+      register: async (payload) => {
+        const response = await authApi.register(payload);
         setState({
-          status: "anonymous",
-          user: null,
+          status: "authenticated",
+          user: mapSessionUser(response.user),
         });
+      },
+      refreshSession: async () => {
+        const response = await authApi.me();
+        setState({
+          status: "authenticated",
+          user: mapSessionUser(response.user),
+        });
+      },
+      signOut: async () => {
+        try {
+          await authApi.signOut();
+        } finally {
+          setState({
+            status: "anonymous",
+            user: null,
+          });
+        }
       },
     }),
     [state],

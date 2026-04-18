@@ -16,6 +16,12 @@ class Settings(BaseSettings):
     attachments_dir: str = "/data/attachments"
     cors_origins: str = "http://localhost:3000"
     alembic_config_path: str = "alembic.ini"
+    session_cookie_name: str = "agentic_chat_session"
+    session_cookie_secure: bool = False
+    session_cookie_samesite: str = "lax"
+    session_ttl_seconds: int = 60 * 60 * 24 * 30
+    session_secret_key: str = Field(default="dev-only-session-secret-change-me")
+    password_hash_iterations: int = 600_000
 
     model_config = SettingsConfigDict(
         env_file=".env",
