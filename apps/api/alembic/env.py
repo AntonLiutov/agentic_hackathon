@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sys
 from logging.config import fileConfig
 
 from sqlalchemy import pool
@@ -8,6 +9,7 @@ from sqlalchemy.ext.asyncio import async_engine_from_config
 
 from alembic import context
 from app.core.config import get_settings
+from app.db import models as _models  # noqa: F401
 from app.db.base import Base
 
 config = context.config
@@ -61,5 +63,8 @@ if context.is_offline_mode():
     run_migrations_offline()
 else:
     import asyncio
+
+    if sys.platform.startswith("win"):
+        asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
     asyncio.run(run_migrations_online())
