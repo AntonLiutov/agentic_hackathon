@@ -47,9 +47,11 @@ beforeEach(() => {
               member_count: 4,
               is_member: true,
               is_owner: true,
+              is_admin: true,
               is_banned: false,
               can_join: false,
               can_leave: false,
+              can_manage_members: true,
               joined_at: "2026-04-18T08:00:00Z",
             },
           ],
@@ -74,9 +76,11 @@ beforeEach(() => {
               member_count: 4,
               is_member: true,
               is_owner: true,
+              is_admin: true,
               is_banned: false,
               can_join: false,
               can_leave: false,
+              can_manage_members: true,
               joined_at: "2026-04-18T08:00:00Z",
             },
             {
@@ -88,9 +92,11 @@ beforeEach(() => {
               member_count: 7,
               is_member: false,
               is_owner: false,
+              is_admin: false,
               is_banned: false,
               can_join: true,
               can_leave: false,
+              can_manage_members: false,
               joined_at: null,
             },
           ],
@@ -104,6 +110,35 @@ beforeEach(() => {
 
     if (url.endsWith("/api/rooms/invitations/mine")) {
       return new Response(JSON.stringify({ invitations: [] }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    if (url.endsWith("/api/rooms/room-engineering/members")) {
+      return new Response(
+        JSON.stringify({
+          members: [
+            {
+              id: "user-1",
+              username: "Preview User",
+              email: "preview@agentic.chat",
+              joined_at: "2026-04-18T08:00:00Z",
+              is_owner: true,
+              is_admin: true,
+              can_remove: false,
+            },
+          ],
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        },
+      );
+    }
+
+    if (url.endsWith("/api/rooms/room-engineering/bans")) {
+      return new Response(JSON.stringify({ bans: [] }), {
         status: 200,
         headers: { "Content-Type": "application/json" },
       });
@@ -169,7 +204,7 @@ describe("App routes", () => {
         screen.getByRole("heading", { level: 1, name: "#engineering-room" }),
       ).toBeInTheDocument();
     });
-    expect(screen.getByText("Preview User")).toBeInTheDocument();
+    expect(screen.getByText("preview@agentic.chat")).toBeInTheDocument();
   });
 
   it("joins a public room from the sidebar", async () => {
@@ -183,9 +218,11 @@ describe("App routes", () => {
         member_count: 4,
         is_member: true,
         is_owner: true,
+        is_admin: true,
         is_banned: false,
         can_join: false,
         can_leave: false,
+        can_manage_members: true,
         joined_at: "2026-04-18T08:00:00Z",
       },
     ];
@@ -200,9 +237,11 @@ describe("App routes", () => {
         member_count: 7,
         is_member: false,
         is_owner: false,
+        is_admin: false,
         is_banned: false,
         can_join: true,
         can_leave: false,
+        can_manage_members: false,
         joined_at: null,
       },
     ];
@@ -247,6 +286,35 @@ describe("App routes", () => {
         });
       }
 
+      if (url.endsWith("/api/rooms/room-engineering/members")) {
+        return new Response(
+          JSON.stringify({
+            members: [
+              {
+                id: "user-1",
+                username: "Preview User",
+                email: "preview@agentic.chat",
+                joined_at: "2026-04-18T08:00:00Z",
+                is_owner: true,
+                is_admin: true,
+                can_remove: false,
+              },
+            ],
+          }),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          },
+        );
+      }
+
+      if (url.endsWith("/api/rooms/room-engineering/bans")) {
+        return new Response(JSON.stringify({ bans: [] }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
       if (url.endsWith("/api/rooms/room-random/join") && init?.method === "POST") {
         const joinedRoom = {
           id: "room-random",
@@ -257,9 +325,11 @@ describe("App routes", () => {
           member_count: 8,
           is_member: true,
           is_owner: false,
+          is_admin: false,
           is_banned: false,
           can_join: false,
           can_leave: true,
+          can_manage_members: false,
           joined_at: "2026-04-18T09:00:00Z",
         };
         myRooms = [...myRooms, joinedRoom];
@@ -269,6 +339,37 @@ describe("App routes", () => {
           status: 200,
           headers: { "Content-Type": "application/json" },
         });
+      }
+
+      if (url.endsWith("/api/rooms/room-random/members")) {
+        return new Response(
+          JSON.stringify({
+            members: [
+              {
+                id: "user-2",
+                username: "room.owner",
+                email: "owner@example.com",
+                joined_at: "2026-04-18T08:00:00Z",
+                is_owner: true,
+                is_admin: true,
+                can_remove: false,
+              },
+              {
+                id: "user-1",
+                username: "Preview User",
+                email: "preview@agentic.chat",
+                joined_at: "2026-04-18T09:00:00Z",
+                is_owner: false,
+                is_admin: false,
+                can_remove: false,
+              },
+            ],
+          }),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          },
+        );
       }
 
       return new Response(JSON.stringify({ detail: "Unhandled request in test." }), {
@@ -359,9 +460,11 @@ describe("App routes", () => {
           member_count: 2,
           is_member: true,
           is_owner: false,
+          is_admin: false,
           is_banned: false,
           can_join: false,
           can_leave: true,
+          can_manage_members: false,
           joined_at: "2026-04-18T09:10:00Z",
         };
         myRooms = [privateRoom];
@@ -370,6 +473,37 @@ describe("App routes", () => {
           status: 200,
           headers: { "Content-Type": "application/json" },
         });
+      }
+
+      if (url.endsWith("/api/rooms/room-private/members")) {
+        return new Response(
+          JSON.stringify({
+            members: [
+              {
+                id: "user-2",
+                username: "owner.user",
+                email: "owner@example.com",
+                joined_at: "2026-04-18T08:00:00Z",
+                is_owner: true,
+                is_admin: true,
+                can_remove: false,
+              },
+              {
+                id: "user-1",
+                username: "Preview User",
+                email: "preview@agentic.chat",
+                joined_at: "2026-04-18T09:10:00Z",
+                is_owner: false,
+                is_admin: false,
+                can_remove: false,
+              },
+            ],
+          }),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          },
+        );
       }
 
       return new Response(JSON.stringify({ detail: "Unhandled request in test." }), {
@@ -389,6 +523,167 @@ describe("App routes", () => {
     await waitFor(() => {
       expect(screen.getByText("Invitation accepted. You joined #war-room.")).toBeInTheDocument();
       expect(screen.getByRole("heading", { level: 1, name: "#war-room" })).toBeInTheDocument();
+    });
+  });
+
+  it("removes a member and shows the room ban state to admins", async () => {
+    let members = [
+      {
+        id: "user-1",
+        username: "Preview User",
+        email: "preview@agentic.chat",
+        joined_at: "2026-04-18T08:00:00Z",
+        is_owner: true,
+        is_admin: true,
+        can_remove: false,
+      },
+      {
+        id: "user-2",
+        username: "guest.user",
+        email: "guest@example.com",
+        joined_at: "2026-04-18T08:03:00Z",
+        is_owner: false,
+        is_admin: false,
+        can_remove: true,
+      },
+    ];
+    let bans: Array<{
+      id: string;
+      user_id: string;
+      username: string;
+      email: string;
+      banned_at: string;
+      banned_by_username: string | null;
+      reason: string | null;
+    }> = [];
+    let myRooms = [
+      {
+        id: "room-engineering",
+        name: "engineering-room",
+        description: "Coordination room for the main launch.",
+        visibility: "public",
+        owner_user_id: "user-1",
+        member_count: 2,
+        is_member: true,
+        is_owner: true,
+        is_admin: true,
+        is_banned: false,
+        can_join: false,
+        can_leave: false,
+        can_manage_members: true,
+        joined_at: "2026-04-18T08:00:00Z",
+      },
+    ];
+    let publicRooms = [...myRooms];
+
+    fetchMock.mockImplementation(async (input, init) => {
+      const url = typeof input === "string" ? input : input.toString();
+
+      if (url.endsWith("/api/auth/me")) {
+        return new Response(
+          JSON.stringify({
+            user: {
+              id: "user-1",
+              username: "Preview User",
+              email: "preview@agentic.chat",
+            },
+          }),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          },
+        );
+      }
+
+      if (url.includes("/api/rooms/mine")) {
+        return new Response(JSON.stringify({ rooms: myRooms }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      if (url.includes("/api/rooms/public")) {
+        return new Response(JSON.stringify({ rooms: publicRooms }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      if (url.endsWith("/api/rooms/invitations/mine")) {
+        return new Response(JSON.stringify({ invitations: [] }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      if (url.endsWith("/api/rooms/room-engineering/members") && (!init?.method || init.method === "GET")) {
+        return new Response(JSON.stringify({ members }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      if (url.endsWith("/api/rooms/room-engineering/bans")) {
+        return new Response(JSON.stringify({ bans }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      if (url.endsWith("/api/rooms/room-engineering/members/user-2") && init?.method === "DELETE") {
+        members = members.filter((member) => member.id !== "user-2");
+        bans = [
+          {
+            id: "ban-1",
+            user_id: "user-2",
+            username: "guest.user",
+            email: "guest@example.com",
+            banned_at: "2026-04-18T09:00:00Z",
+            banned_by_username: "Preview User",
+            reason: "Removed by a room admin.",
+          },
+        ];
+        myRooms = [
+          {
+            ...myRooms[0],
+            member_count: 1,
+          },
+        ];
+        publicRooms = myRooms;
+
+        return new Response(
+          JSON.stringify({
+            success: true,
+            message: "Member removed from the room and banned from rejoining.",
+          }),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          },
+        );
+      }
+
+      return new Response(JSON.stringify({ detail: "Unhandled request in test." }), {
+        status: 500,
+        headers: { "Content-Type": "application/json" },
+      });
+    });
+
+    renderRoutes(["/app/chats"]);
+
+    await waitFor(() => {
+      expect(screen.getByText("guest.user")).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Remove" }));
+
+    await waitFor(() => {
+      expect(
+        screen.getByText("Member removed from the room and banned from rejoining."),
+      ).toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "Remove" })).not.toBeInTheDocument();
+      expect(screen.getByText("By Preview User")).toBeInTheDocument();
+      expect(screen.getByText("Removed by a room admin.")).toBeInTheDocument();
     });
   });
 

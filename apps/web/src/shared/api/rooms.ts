@@ -11,10 +11,32 @@ export type RoomSummary = {
   member_count: number;
   is_member: boolean;
   is_owner: boolean;
+  is_admin: boolean;
   is_banned: boolean;
   can_join: boolean;
   can_leave: boolean;
+  can_manage_members: boolean;
   joined_at: string | null;
+};
+
+export type RoomMember = {
+  id: string;
+  username: string;
+  email: string;
+  joined_at: string;
+  is_owner: boolean;
+  is_admin: boolean;
+  can_remove: boolean;
+};
+
+export type RoomBan = {
+  id: string;
+  user_id: string;
+  username: string;
+  email: string;
+  banned_at: string;
+  banned_by_username: string | null;
+  reason: string | null;
 };
 
 export type RoomInvitation = {
@@ -33,6 +55,14 @@ export type RoomListResponse = {
 
 export type RoomInvitationListResponse = {
   invitations: RoomInvitation[];
+};
+
+export type RoomMemberListResponse = {
+  members: RoomMember[];
+};
+
+export type RoomBanListResponse = {
+  bans: RoomBan[];
 };
 
 export type CreateRoomPayload = {
@@ -71,6 +101,17 @@ export const roomsApi = {
       method: "POST",
       body: JSON.stringify(payload),
     }),
+  listMembers: (roomId: string) =>
+    apiRequest<RoomMemberListResponse>(`/api/rooms/${roomId}/members`),
+  listBans: (roomId: string) =>
+    apiRequest<RoomBanListResponse>(`/api/rooms/${roomId}/bans`),
+  removeMember: (roomId: string, memberUserId: string) =>
+    apiRequest<{ success: boolean; message: string }>(
+      `/api/rooms/${roomId}/members/${memberUserId}`,
+      {
+        method: "DELETE",
+      },
+    ),
   acceptInvitation: (invitationId: string) =>
     apiRequest<RoomSummary>(`/api/rooms/invitations/${invitationId}/accept`, {
       method: "POST",

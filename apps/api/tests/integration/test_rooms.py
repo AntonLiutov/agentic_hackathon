@@ -246,3 +246,125 @@ def test_banned_user_cannot_rejoin_public_room(auth_client: TestClient) -> None:
     public_catalog_response = auth_client.get("/api/rooms/public")
     assert public_catalog_response.status_code == 200
     assert public_catalog_response.json()["rooms"][0]["is_banned"] is True
+
+
+def test_room_membership_access_and_admin_removal_rules(auth_client: TestClient) -> None:
+    _register_user(
+        auth_client,
+        email="owner-membership@example.com",
+        username="owner.membership",
+    )
+    room_response = auth_client.post(
+        "/api/rooms",
+        json={
+            "name": "membership-lab",
+            "description": "Private room for membership rule testing.",
+            "visibility": "private",
+        },
+    )
+    assert room_response.status_code == 201
+    room_id = room_response.json()["id"]
+
+    auth_client.post("/api/auth/logout")
+    _register_user(
+        auth_client,
+        email="member-one@example.com",
+        username="member.one",
+    )
+
+    before_invite_room_summary = auth_client.get(f"/api/rooms/{room_id}")
+    assert before_invite_room_summary.status_code == 404
+
+    auth_client.post("/api/auth/logout")
+    _login_user(auth_client, email="owner-membership@example.com")
+
+    invite_response = auth_client.post(
+        f"/api/rooms/{room_id}/invitations",
+        json={
+            "username": "member.one",
+            "message": "Join the room for membership testing.",
+        },
+    )
+    assert invite_response.status_code == 201
+
+    member_list_response = auth_client.get(f"/api/rooms/{room_id}/members")
+    assert member_list_response.status_code == 200
+    members = member_list_response.json()["members"]
+    assert len(members) == 1
+    assert members[0]["username"] == "owner.membership"
+    assert members[0]["is_owner"] is True
+    assert members[0]["is_admin"] is True
+
+    auth_client.post("/api/auth/logout")
+    _login_user(auth_client, email="member-one@example.com")
+
+    invitations_response = auth_client.get("/api/rooms/invitations/mine")
+    assert invitations_response.status_code == 200
+    invitation_id = invitations_response.json()["invitations"][0]["id"]
+
+    accept_response = auth_client.post(f"/api/rooms/invitations/{invitation_id}/accept")
+    assert accept_response.status_code == 200
+    assert accept_response.json()["is_member"] is True
+
+    member_visible_list = auth_client.get(f"/api/rooms/{room_id}/members")
+    assert member_visible_list.status_code == 200
+    assert [member["username"] for member in member_visible_list.json()["members"]] == [
+        "owner.membership",
+        "member.one",
+    ]
+
+    ban_list_for_regular_member = auth_client.get(f"/api/rooms/{room_id}/bans")
+    assert ban_list_for_regular_member.status_code == 403
+
+    auth_client.post("/api/auth/logout")
+    _login_user(auth_client, email="owner-membership@example.com")
+
+    current_members = auth_client.get(f"/api/rooms/{room_id}/members")
+    assert current_members.status_code == 200
+    removable_member = next(
+        member
+        for member in current_members.json()["members"]
+        if member["username"] == "member.one"
+    )
+    assert removable_member["can_remove"] is True
+
+    remove_response = auth_client.delete(
+        f"/api/rooms/{room_id}/members/{removable_member['id']}"
+    )
+    assert remove_response.status_code == 200
+    assert (
+        remove_response.json()["message"]
+        == "Member removed from the room and banned from rejoining."
+    )
+
+    ban_list_after_removal = auth_client.get(f"/api/rooms/{room_id}/bans")
+    assert ban_list_after_removal.status_code == 200
+    bans = ban_list_after_removal.json()["bans"]
+    assert len(bans) == 1
+    assert bans[0]["username"] == "member.one"
+
+    auth_client.post("/api/auth/logout")
+    _login_user(auth_client, email="member-one@example.com")
+
+    removed_room_summary = auth_client.get(f"/api/rooms/{room_id}")
+    assert removed_room_summary.status_code == 404
+
+    removed_member_list = auth_client.get(f"/api/rooms/{room_id}/members")
+    assert removed_member_list.status_code == 404
+
+    removed_my_rooms = auth_client.get("/api/rooms/mine")
+    assert removed_my_rooms.status_code == 200
+    assert removed_my_rooms.json()["rooms"] == []
+
+    auth_client.post("/api/auth/logout")
+    _login_user(auth_client, email="owner-membership@example.com")
+
+    re_invite_response = auth_client.post(
+        f"/api/rooms/{room_id}/invitations",
+        json={
+            "username": "member.one",
+            "message": "Trying to re-invite a removed member.",
+        },
+    )
+    assert re_invite_response.status_code == 403
+    assert re_invite_response.json()["detail"] == "This user cannot be invited to the room."
