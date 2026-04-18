@@ -20,6 +20,7 @@ type SessionContextValue = SessionState & {
   register: (payload: RegisterPayload) => Promise<void>;
   refreshSession: () => Promise<void>;
   signOut: () => Promise<void>;
+  clearSession: () => void;
 };
 
 export const SessionContext = createContext<SessionContextValue | null>(null);
@@ -110,6 +111,12 @@ export function SessionProvider({ children }: PropsWithChildren) {
             user: null,
           });
         }
+      },
+      clearSession: () => {
+        setState({
+          status: "anonymous",
+          user: null,
+        });
       },
     }),
     [state],

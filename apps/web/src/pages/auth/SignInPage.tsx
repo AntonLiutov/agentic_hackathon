@@ -7,6 +7,7 @@ import { AuthPageLayout } from "./AuthPageLayout";
 
 type RedirectState = {
   redirectTo?: string;
+  notice?: string;
 };
 
 export function SignInPage() {
@@ -22,11 +23,37 @@ export function SignInPage() {
     const state = location.state as RedirectState | null;
     return state?.redirectTo ?? "/app/chats";
   }, [location.state]);
+  const noticeMessage = useMemo(() => {
+    const state = location.state as RedirectState | null;
+    if (state?.notice) {
+      return state.notice;
+    }
+
+    const params = new URLSearchParams(location.search);
+    const noticeCode = params.get("notice");
+
+    if (noticeCode === "password-updated") {
+      return "Password updated. Please sign in again with your new password.";
+    }
+
+    if (noticeCode === "password-reset") {
+      return "Password reset complete. Please sign in with your new password.";
+    }
+
+    const storedNotice = window.sessionStorage.getItem("agentic_notice");
+
+    if (storedNotice) {
+      return storedNotice;
+    }
+
+    return null;
+  }, [location.search, location.state]);
 
   async function handleSignIn(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setErrorMessage(null);
     setIsSubmitting(true);
+    window.sessionStorage.removeItem("agentic_notice");
 
     try {
       await signIn({ email, password });
@@ -50,6 +77,7 @@ export function SignInPage() {
       }
     >
       <form className="auth-form" onSubmit={handleSignIn}>
+        {noticeMessage ? <p className="auth-success">{noticeMessage}</p> : null}
         <label>
           <span>Email</span>
           <input

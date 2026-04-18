@@ -13,6 +13,7 @@ Sprint 1 foundation work is in progress. The repository now includes:
 - frontend route skeleton for landing, auth, and workspace flows
 - working registration, login, session bootstrap, and logout flows
 - active session listing and targeted session revocation
+- password change and email-based password reset flow
 
 ## Repository Structure
 
@@ -33,7 +34,8 @@ Sprint 1 foundation work is in progress. The repository now includes:
 2. Run `docker compose up --build` from the repository root.
 3. Open `http://localhost:3000`.
 4. API health is available at `http://localhost:8000/healthz`.
-5. Register a user or sign in with an existing account to enter the protected workspace shell.
+5. Mailpit inbox UI is available at `http://localhost:8025`.
+6. Register a user or sign in with an existing account to enter the protected workspace shell.
 
 ## Local Verification
 
@@ -95,9 +97,12 @@ Basic checks after startup:
 4. Open `/app/sessions` and confirm the current browser session is shown separately from other active sessions.
 5. Sign in to the same account in another browser or private window, then revoke that other session from `/app/sessions`.
 6. Confirm the revoked browser can no longer access protected routes, while the current browser stays signed in.
-7. Use the workspace sign-out action and confirm protected routes redirect back to `/signin`.
-8. Open `http://localhost:8000/healthz` and confirm the API returns `status: ok`.
-9. Open `http://localhost:3000/healthz` and confirm the web container health endpoint responds.
+7. Open `/app/profile`, change the password, and confirm you are returned to sign-in with a success notice.
+8. Open `/forgot-password`, submit your email, then open Mailpit at `http://localhost:8025` and use the emailed reset link.
+9. Confirm old passwords and old browser sessions no longer work after the password rotation.
+10. Use the workspace sign-out action and confirm protected routes redirect back to `/signin`.
+11. Open `http://localhost:8000/healthz` and confirm the API returns `status: ok`.
+12. Open `http://localhost:3000/healthz` and confirm the web container health endpoint responds.
 
 Stop the stack:
 
@@ -115,5 +120,6 @@ This repository currently targets:
 - `SP1-04 Core Schema`
 - `SP1-05 Registration and Login`
 - `SP1-06 Persistent Sessions`
+- `SP1-07 Password Management`
 
-The next implementation step is password change and password reset.
+The next implementation step is Sprint 2: conversations, rooms, history, and realtime messaging.

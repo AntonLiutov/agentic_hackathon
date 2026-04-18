@@ -53,13 +53,21 @@ class SessionTokenPair:
     token_hash: str
 
 
-def hash_session_token(token: str, *, secret_key: str) -> str:
+def hash_token_value(token: str, *, secret_key: str) -> str:
     return hmac.new(secret_key.encode("utf-8"), token.encode("utf-8"), hashlib.sha256).hexdigest()
 
 
-def generate_session_token(*, secret_key: str) -> SessionTokenPair:
+def hash_session_token(token: str, *, secret_key: str) -> str:
+    return hash_token_value(token, secret_key=secret_key)
+
+
+def generate_token_pair(*, secret_key: str) -> SessionTokenPair:
     plain_token = secrets.token_urlsafe(32)
     return SessionTokenPair(
         plain_token=plain_token,
-        token_hash=hash_session_token(plain_token, secret_key=secret_key),
+        token_hash=hash_token_value(plain_token, secret_key=secret_key),
     )
+
+
+def generate_session_token(*, secret_key: str) -> SessionTokenPair:
+    return generate_token_pair(secret_key=secret_key)
