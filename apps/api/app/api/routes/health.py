@@ -1,19 +1,33 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, Request
 
-from app.core.config import get_settings
+from app.cache.redis import RedisManager
+from app.core.config import Settings
+from app.db.session import DatabaseManager
 
 router = APIRouter(tags=["health"])
 
 
-@router.get("/healthz")
-async def healthcheck() -> dict[str, object]:
-    settings = get_settings()
+@router.get(
+    "/healthz",
+    summary="Check API health",
+    description=(
+        "Verifies that the API process is running and that database and Redis "
+        "connectivity are available."
+    ),
+)
+async def healthcheck(request: Request) -> dict[str, object]:
+    settings: Settings = request.app.state.settings
+    database: DatabaseManager = request.app.state.database
+    redis: RedisManager = request.app.state.redis
+    database_ok = await database.ping()
+    redis_ok = await redis.ping()
+
     return {
-        "status": "ok",
+        "status": "ok" if database_ok and redis_ok else "degraded",
         "service": settings.app_name,
         "environment": settings.app_env,
         "dependencies": {
-            "database_url": settings.database_url,
-            "redis_url": settings.redis_url,
+            "database": database_ok,
+            "redis": redis_ok,
         },
     }

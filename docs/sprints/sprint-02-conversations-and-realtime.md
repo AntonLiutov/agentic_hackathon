@@ -54,6 +54,7 @@ Acceptance criteria:
 - edit own message
 - delete own message
 - admin delete in room conversations
+- assign a monotonic per-conversation sequence or watermark for client integrity checks
 
 Acceptance criteria:
 
@@ -61,6 +62,7 @@ Acceptance criteria:
 - reply UI clearly references the target message
 - edited indicator appears in the UI
 - deletion rules match authorship and room-admin permissions
+- message events contain enough continuity information for the client to detect gaps safely
 
 ### SP2-05 Message History and Infinite Scroll
 
@@ -68,12 +70,14 @@ Acceptance criteria:
 - lazy loading of older messages
 - preserve usability for 10,000+ messages
 - correct auto-scroll behavior at the bottom only
+- support recovery when the client detects a gap in live message continuity
 
 Acceptance criteria:
 
 - old messages load incrementally
 - no forced auto-scroll when the user is reading older history
 - scrolling remains stable during pagination
+- the client can re-query history if live updates imply a missing message range
 
 ### SP2-06 Realtime Delivery
 
@@ -81,12 +85,15 @@ Acceptance criteria:
 - subscribe to active conversations
 - broadcast new messages and edits/deletes
 - reconnect handling
+- use REST plus WebSockets together rather than forcing all state through one transport
+- avoid any unbounded offline user message queue design
 
 Acceptance criteria:
 
 - message delivery is near-real-time in active chats
 - reconnect restores live updates without manual refresh
 - offline recipients still receive persisted history later
+- offline catch-up is served from persisted history, not from indefinitely retained ephemeral queues
 
 ### SP2-07 Unread Indicators
 
@@ -107,12 +114,15 @@ Acceptance criteria:
 - online, AFK, offline derivation
 - show presence in contacts and room member lists
 - low-latency propagation
+- derive activity from browser interaction signals rather than cursor movement alone
+- handle tab suspension and browser hibernation through TTL expiry semantics
 
 Acceptance criteria:
 
 - any active tab keeps the user online
 - AFK is shown only when all tabs are idle for more than one minute
 - closing all tabs eventually marks the user offline
+- presence remains correct even when an inactive tab stops executing JavaScript
 
 ## Dependencies
 
@@ -124,6 +134,8 @@ Acceptance criteria:
 
 - unread logic and presence logic are easy to get subtly wrong
 - mixing room and DM rules incorrectly will create permission leaks
+- live update gap handling can be missed if message ordering is treated as "best effort"
+- browser tab hibernation can invalidate naive presence implementations
 
 ## Exit Criteria
 

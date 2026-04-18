@@ -36,6 +36,17 @@ This plan treats the assignment as a real-time chat platform with strict consist
 
 We will cover the full base specification first. The work is split into mutually exclusive but collectively complete epics so every requirement has one clear owner area and no major feature is planned twice.
 
+## Captured Design Notes
+
+The following implementation notes were captured after initial planning and are now part of the project constraints:
+
+- avoid unbounded per-user offline message queues; rely on durable history and read state instead
+- use a hybrid transport model: REST for durable queries and actions, WebSockets for low-latency updates
+- introduce a monotonic conversation watermark or sequence concept so clients can detect gaps and re-fetch history safely
+- derive presence from activity signals plus heartbeat expiry, not from guaranteed inactive events
+- assume browser tab hibernation can stop JavaScript execution, so presence logic must tolerate silent tabs
+- validate progressively loading very large history, including rooms far beyond the baseline requirement, during hardening and test phases
+
 ## Architecture Summary
 
 ### Recommended Stack
@@ -192,3 +203,6 @@ A task is done only when all of the following are true:
 
 4. Treat consistency bugs as first-class issues.
    Presence correctness, unread correctness, membership enforcement, and access revocation are more important than decorative polish.
+
+5. Preserve design notes inside the repo, not only in chat.
+   Any important implementation caveat discovered during discussion should be attached to the relevant architecture or sprint document before the team moves on.

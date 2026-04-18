@@ -9,3 +9,5 @@ def test_settings_default_values() -> None:
     assert settings.api_port == 8000
     assert settings.database_url.startswith("postgresql+psycopg://")
     assert settings.redis_url.startswith("redis://")
+    assert settings.alembic_config_path == "alembic.ini"
+    assert settings.cors_origin_list == ["http://localhost:3000"]
