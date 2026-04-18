@@ -783,7 +783,8 @@ describe("App routes", () => {
     renderRoutes(["/app/contacts"]);
 
     await waitFor(() => {
-      expect(screen.getByRole("heading", { name: "One-to-one conversations" })).toBeInTheDocument();
+      expect(screen.getAllByRole("heading", { name: "Direct messages" }).length).toBeGreaterThan(0);
+      expect(screen.getByRole("button", { name: "Open direct message" })).toBeInTheDocument();
       expect(screen.getByRole("button", { name: /existing\.friend/i })).toBeInTheDocument();
     });
 

@@ -1,4 +1,11 @@
-import { type FormEvent, useEffect, useState } from "react";
+import {
+  type FormEvent,
+  type UIEvent,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 
 import { useRooms } from "../../features/rooms/use-rooms";
 import { ApiError, getApiErrorMessage } from "../../shared/api/client";
@@ -27,6 +34,8 @@ function getReplyPreview(message: ConversationMessage) {
   return `${message.reply_to_message.author_username}: ${message.reply_to_message.body_text ?? ""}`;
 }
 
+const MESSAGE_PAGE_SIZE = 30;
+
 export function ChatsPage() {
   const { inviteToRoom, joinRoom, leaveRoom, refreshRooms, selectedRoom } = useRooms();
   const [inviteUsername, setInviteUsername] = useState("");
@@ -35,6 +44,8 @@ export function ChatsPage() {
   const [bans, setBans] = useState<RoomBan[]>([]);
   const [messages, setMessages] = useState<ConversationMessage[]>([]);
   const [sequenceHead, setSequenceHead] = useState(0);
+  const [hasOlderMessages, setHasOlderMessages] = useState(false);
+  const [nextBeforeSequence, setNextBeforeSequence] = useState<number | null>(null);
   const [composeText, setComposeText] = useState("");
   const [replyTarget, setReplyTarget] = useState<ConversationMessage | null>(null);
   const [editingMessageId, setEditingMessageId] = useState<number | null>(null);
@@ -46,8 +57,44 @@ export function ChatsPage() {
   const [isJoiningRoom, setIsJoiningRoom] = useState(false);
   const [isLeavingRoom, setIsLeavingRoom] = useState(false);
   const [isSubmittingMessage, setIsSubmittingMessage] = useState(false);
+  const [isLoadingOlderMessages, setIsLoadingOlderMessages] = useState(false);
   const [removingMemberId, setRemovingMemberId] = useState<string | null>(null);
   const [updatingMessageId, setUpdatingMessageId] = useState<number | null>(null);
+  const messageListRef = useRef<HTMLDivElement | null>(null);
+  const shouldAutoScrollRef = useRef(false);
+  const pendingScrollRestoreRef = useRef<{ previousHeight: number; previousTop: number } | null>(
+    null,
+  );
+
+  function isNearBottom() {
+    const container = messageListRef.current;
+
+    if (!container) {
+      return true;
+    }
+
+    return container.scrollHeight - (container.scrollTop + container.clientHeight) < 96;
+  }
+
+  useLayoutEffect(() => {
+    const container = messageListRef.current;
+
+    if (!container) {
+      return;
+    }
+
+    if (pendingScrollRestoreRef.current) {
+      const { previousHeight, previousTop } = pendingScrollRestoreRef.current;
+      container.scrollTop = container.scrollHeight - previousHeight + previousTop;
+      pendingScrollRestoreRef.current = null;
+      return;
+    }
+
+    if (shouldAutoScrollRef.current) {
+      container.scrollTop = container.scrollHeight;
+      shouldAutoScrollRef.current = false;
+    }
+  }, [messages]);
 
   useEffect(() => {
     let isCancelled = false;
@@ -112,6 +159,8 @@ export function ChatsPage() {
       if (!activeRoomId || !isMember) {
         setMessages([]);
         setSequenceHead(0);
+        setHasOlderMessages(false);
+        setNextBeforeSequence(null);
         setReplyTarget(null);
         setEditingMessageId(null);
         setComposeText("");
@@ -120,9 +169,10 @@ export function ChatsPage() {
       }
 
       setIsLoadingMessages(true);
+      shouldAutoScrollRef.current = true;
 
       try {
-        const response = await messagesApi.list(activeRoomId);
+        const response = await messagesApi.list(activeRoomId, MESSAGE_PAGE_SIZE);
 
         if (isCancelled) {
           return;
@@ -130,6 +180,8 @@ export function ChatsPage() {
 
         setMessages(response.messages);
         setSequenceHead(response.sequence_head);
+        setHasOlderMessages(response.has_older);
+        setNextBeforeSequence(response.next_before_sequence);
       } catch (error) {
         if (isCancelled) {
           return;
@@ -155,6 +207,53 @@ export function ChatsPage() {
       isCancelled = true;
     };
   }, [selectedRoom?.id, selectedRoom?.is_member]);
+
+  async function loadOlderMessages() {
+    if (!selectedRoom || !nextBeforeSequence || isLoadingOlderMessages) {
+      return;
+    }
+
+    const container = messageListRef.current;
+    if (container) {
+      pendingScrollRestoreRef.current = {
+        previousHeight: container.scrollHeight,
+        previousTop: container.scrollTop,
+      };
+    }
+
+    setIsLoadingOlderMessages(true);
+
+    try {
+      const response = await messagesApi.list(
+        selectedRoom.id,
+        MESSAGE_PAGE_SIZE,
+        nextBeforeSequence,
+      );
+      setMessages((currentMessages) => {
+        const knownMessageIds = new Set(currentMessages.map((message) => message.id));
+        const olderMessages = response.messages.filter((message) => !knownMessageIds.has(message.id));
+        return [...olderMessages, ...currentMessages];
+      });
+      setSequenceHead(response.sequence_head);
+      setHasOlderMessages(response.has_older);
+      setNextBeforeSequence(response.next_before_sequence);
+    } catch (error) {
+      pendingScrollRestoreRef.current = null;
+      setPanelError(getApiErrorMessage(error, "Unable to load older messages right now."));
+    } finally {
+      setIsLoadingOlderMessages(false);
+    }
+  }
+
+  function handleMessageListScroll(event: UIEvent<HTMLDivElement>) {
+    if (!hasOlderMessages || isLoadingOlderMessages) {
+      return;
+    }
+
+    if (event.currentTarget.scrollTop <= 80) {
+      void loadOlderMessages();
+    }
+  }
 
   function resetComposerState() {
     setComposeText("");
@@ -282,6 +381,7 @@ export function ChatsPage() {
         );
         setPanelNotice("Message updated.");
       } else {
+        shouldAutoScrollRef.current = isNearBottom();
         const createdMessage = await messagesApi.create(selectedRoom.id, {
           body_text: composeText,
           reply_to_message_id: replyTarget?.id,
@@ -480,7 +580,25 @@ export function ChatsPage() {
               <li>Send the first message, reply to it, and edit or delete it from the message list.</li>
             </div>
           ) : (
-            <div className="message-list">
+            <div
+              ref={messageListRef}
+              className="message-list message-list--scrollable"
+              onScroll={handleMessageListScroll}
+            >
+              {hasOlderMessages ? (
+                <div className="message-history-banner">
+                  <button
+                    className="ghost-button"
+                    type="button"
+                    disabled={isLoadingOlderMessages}
+                    onClick={() => {
+                      void loadOlderMessages();
+                    }}
+                  >
+                    {isLoadingOlderMessages ? "Loading older messages..." : "Load older messages"}
+                  </button>
+                </div>
+              ) : null}
               {messages.map((message) => (
                 <article key={message.id} className="message-card">
                   {message.reply_to_message ? (

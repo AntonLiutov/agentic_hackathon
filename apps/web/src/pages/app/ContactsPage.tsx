@@ -1,4 +1,14 @@
-import { type FormEvent, useEffect, useMemo, useState } from "react";
+import {
+  type ReactNode,
+  useCallback,
+  type FormEvent,
+  type UIEvent,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 
 import { getApiErrorMessage } from "../../shared/api/client";
 import { dmsApi, type DirectMessage } from "../../shared/api/dms";
@@ -6,6 +16,7 @@ import {
   messagesApi,
   type ConversationMessage,
 } from "../../shared/api/messages";
+import { useWorkspaceContextPanel } from "../../features/layout/workspace-context-panel";
 
 function sortDirectMessages(directMessages: DirectMessage[]) {
   return [...directMessages].sort((left, right) =>
@@ -32,22 +43,63 @@ function getReplyPreview(message: ConversationMessage) {
   return `${message.reply_to_message.author_username}: ${message.reply_to_message.body_text ?? ""}`;
 }
 
+const MESSAGE_PAGE_SIZE = 30;
+
 export function ContactsPage() {
+  const { setPanelContent } = useWorkspaceContextPanel();
   const [directMessages, setDirectMessages] = useState<DirectMessage[]>([]);
   const [selectedDirectMessageId, setSelectedDirectMessageId] = useState<string | null>(null);
   const [username, setUsername] = useState("");
   const [composeText, setComposeText] = useState("");
   const [messages, setMessages] = useState<ConversationMessage[]>([]);
   const [sequenceHead, setSequenceHead] = useState(0);
+  const [hasOlderMessages, setHasOlderMessages] = useState(false);
+  const [nextBeforeSequence, setNextBeforeSequence] = useState<number | null>(null);
   const [replyTarget, setReplyTarget] = useState<ConversationMessage | null>(null);
   const [editingMessageId, setEditingMessageId] = useState<number | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isLoadingMessages, setIsLoadingMessages] = useState(false);
+  const [isLoadingOlderMessages, setIsLoadingOlderMessages] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSubmittingMessage, setIsSubmittingMessage] = useState(false);
   const [updatingMessageId, setUpdatingMessageId] = useState<number | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [noticeMessage, setNoticeMessage] = useState<string | null>(null);
+  const messageListRef = useRef<HTMLDivElement | null>(null);
+  const shouldAutoScrollRef = useRef(false);
+  const pendingScrollRestoreRef = useRef<{ previousHeight: number; previousTop: number } | null>(
+    null,
+  );
+
+  function isNearBottom() {
+    const container = messageListRef.current;
+
+    if (!container) {
+      return true;
+    }
+
+    return container.scrollHeight - (container.scrollTop + container.clientHeight) < 96;
+  }
+
+  useLayoutEffect(() => {
+    const container = messageListRef.current;
+
+    if (!container) {
+      return;
+    }
+
+    if (pendingScrollRestoreRef.current) {
+      const { previousHeight, previousTop } = pendingScrollRestoreRef.current;
+      container.scrollTop = container.scrollHeight - previousHeight + previousTop;
+      pendingScrollRestoreRef.current = null;
+      return;
+    }
+
+    if (shouldAutoScrollRef.current) {
+      container.scrollTop = container.scrollHeight;
+      shouldAutoScrollRef.current = false;
+    }
+  }, [messages]);
 
   useEffect(() => {
     let isCancelled = false;
@@ -101,6 +153,8 @@ export function ContactsPage() {
       if (!selectedDirectMessageId) {
         setMessages([]);
         setSequenceHead(0);
+        setHasOlderMessages(false);
+        setNextBeforeSequence(null);
         setReplyTarget(null);
         setEditingMessageId(null);
         setComposeText("");
@@ -110,9 +164,10 @@ export function ContactsPage() {
 
       setIsLoadingMessages(true);
       setErrorMessage(null);
+      shouldAutoScrollRef.current = true;
 
       try {
-        const response = await messagesApi.list(selectedDirectMessageId);
+        const response = await messagesApi.list(selectedDirectMessageId, MESSAGE_PAGE_SIZE);
 
         if (isCancelled) {
           return;
@@ -120,6 +175,8 @@ export function ContactsPage() {
 
         setMessages(response.messages);
         setSequenceHead(response.sequence_head);
+        setHasOlderMessages(response.has_older);
+        setNextBeforeSequence(response.next_before_sequence);
       } catch (error) {
         if (!isCancelled) {
           setErrorMessage(getApiErrorMessage(error, "Unable to load direct messages right now."));
@@ -138,7 +195,54 @@ export function ContactsPage() {
     };
   }, [selectedDirectMessageId]);
 
-  async function handleOpenDirectMessage(event: FormEvent<HTMLFormElement>) {
+  async function loadOlderMessages() {
+    if (!selectedDirectMessageId || !nextBeforeSequence || isLoadingOlderMessages) {
+      return;
+    }
+
+    const container = messageListRef.current;
+    if (container) {
+      pendingScrollRestoreRef.current = {
+        previousHeight: container.scrollHeight,
+        previousTop: container.scrollTop,
+      };
+    }
+
+    setIsLoadingOlderMessages(true);
+
+    try {
+      const response = await messagesApi.list(
+        selectedDirectMessageId,
+        MESSAGE_PAGE_SIZE,
+        nextBeforeSequence,
+      );
+      setMessages((currentMessages) => {
+        const knownMessageIds = new Set(currentMessages.map((message) => message.id));
+        const olderMessages = response.messages.filter((message) => !knownMessageIds.has(message.id));
+        return [...olderMessages, ...currentMessages];
+      });
+      setSequenceHead(response.sequence_head);
+      setHasOlderMessages(response.has_older);
+      setNextBeforeSequence(response.next_before_sequence);
+    } catch (error) {
+      pendingScrollRestoreRef.current = null;
+      setErrorMessage(getApiErrorMessage(error, "Unable to load older messages right now."));
+    } finally {
+      setIsLoadingOlderMessages(false);
+    }
+  }
+
+  function handleMessageListScroll(event: UIEvent<HTMLDivElement>) {
+    if (!hasOlderMessages || isLoadingOlderMessages) {
+      return;
+    }
+
+    if (event.currentTarget.scrollTop <= 80) {
+      void loadOlderMessages();
+    }
+  }
+
+  const handleOpenDirectMessage = useCallback(async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setErrorMessage(null);
     setNoticeMessage(null);
@@ -160,7 +264,7 @@ export function ContactsPage() {
     } finally {
       setIsSubmitting(false);
     }
-  }
+  }, [username]);
 
   function resetComposerState() {
     setComposeText("");
@@ -191,6 +295,7 @@ export function ContactsPage() {
         );
         setNoticeMessage("Message updated.");
       } else {
+        shouldAutoScrollRef.current = isNearBottom();
         const createdMessage = await messagesApi.create(selectedDirectMessage.id, {
           body_text: composeText,
           reply_to_message_id: replyTarget?.id,
@@ -252,23 +357,54 @@ export function ContactsPage() {
     [directMessages, selectedDirectMessageId],
   );
 
+  const contactsPanelContent = useMemo<ReactNode>(
+    () => (
+      <>
+        <h3>Direct messages</h3>
+        <p>
+          One-to-one conversations live on the shared conversation model, including persisted
+          history, replies, edits, deletes, and continuity sequence numbers.
+        </p>
+
+        <div className="context-block">
+          <strong>Start conversation</strong>
+          <form className="auth-form" onSubmit={handleOpenDirectMessage}>
+            <label>
+              <span>Username</span>
+              <input
+                type="text"
+                placeholder="alice"
+                value={username}
+                onChange={(event) => setUsername(event.target.value)}
+                minLength={3}
+                maxLength={64}
+                required
+              />
+            </label>
+            <button className="primary-button" type="submit" disabled={isSubmitting}>
+              {isSubmitting ? "Opening..." : "Open direct message"}
+            </button>
+          </form>
+        </div>
+      </>
+    ),
+    [handleOpenDirectMessage, isSubmitting, username],
+  );
+
+  useEffect(() => {
+    setPanelContent(contactsPanelContent);
+
+    return () => {
+      setPanelContent(null);
+    };
+  }, [contactsPanelContent, setPanelContent]);
+
   return (
     <section className="chat-workspace card">
-      <header className="chat-header room-header">
-        <div>
-          <p className="eyebrow">Direct messages</p>
-          <h1>One-to-one conversations</h1>
-          <p>
-            Personal dialogs now live on the shared conversation model, with persisted messages,
-            replies, edits, deletes, and continuity sequence numbers.
-          </p>
-        </div>
-      </header>
-
       {errorMessage ? <p className="auth-error">{errorMessage}</p> : null}
       {noticeMessage ? <p className="auth-success">{noticeMessage}</p> : null}
 
-      <div className="chat-room-layout">
+      <div className="chat-room-layout chat-room-layout--narrow-rail">
         <div className="chat-room-main">
           {selectedDirectMessage ? (
             <>
@@ -296,7 +432,27 @@ export function ContactsPage() {
                   <li>Send the first message, reply to it, or edit and delete your own messages.</li>
                 </div>
               ) : (
-                <div className="message-list">
+                <div
+                  ref={messageListRef}
+                  className="message-list message-list--scrollable"
+                  onScroll={handleMessageListScroll}
+                >
+                  {hasOlderMessages ? (
+                    <div className="message-history-banner">
+                      <button
+                        className="ghost-button"
+                        type="button"
+                        disabled={isLoadingOlderMessages}
+                        onClick={() => {
+                          void loadOlderMessages();
+                        }}
+                      >
+                        {isLoadingOlderMessages
+                          ? "Loading older messages..."
+                          : "Load older messages"}
+                      </button>
+                    </div>
+                  ) : null}
                   {messages.map((message) => (
                     <article key={message.id} className="message-card">
                       {message.reply_to_message ? (
@@ -424,30 +580,8 @@ export function ContactsPage() {
           )}
         </div>
 
-        <aside className="room-context-rail">
-          <article className="session-card">
-            <p className="session-card-kicker">Start conversation</p>
-            <h2>Open a DM by username</h2>
-            <form className="auth-form" onSubmit={handleOpenDirectMessage}>
-              <label>
-                <span>Username</span>
-                <input
-                  type="text"
-                  placeholder="alice"
-                  value={username}
-                  onChange={(event) => setUsername(event.target.value)}
-                  minLength={3}
-                  maxLength={64}
-                  required
-                />
-              </label>
-              <button className="primary-button" type="submit" disabled={isSubmitting}>
-                {isSubmitting ? "Opening..." : "Open direct message"}
-              </button>
-            </form>
-          </article>
-
-          <article className="session-card room-people-card">
+        <aside className="room-context-rail room-context-rail--narrow">
+          <article className="session-card room-people-card room-people-card--bounded">
             <div className="room-context-card-header">
               <div>
                 <p className="session-card-kicker">Existing conversations</p>

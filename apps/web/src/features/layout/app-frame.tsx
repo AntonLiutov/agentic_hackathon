@@ -4,6 +4,10 @@ import { NavLink, Outlet, useLocation } from "react-router-dom";
 import { useRooms } from "../rooms/use-rooms";
 import { useSession } from "../session/use-session";
 import { getApiErrorMessage } from "../../shared/api/client";
+import {
+  useWorkspaceContextPanel,
+  WorkspaceContextPanelProvider,
+} from "./workspace-context-panel";
 
 const appNavItems = [
   { to: "/app/chats", label: "Chats" },
@@ -15,15 +19,19 @@ const appNavItems = [
 function WorkspaceContextCard() {
   const location = useLocation();
   const { invitations } = useRooms();
+  const { panelContent } = useWorkspaceContextPanel();
 
   if (location.pathname.startsWith("/app/chats")) {
     return null;
   }
-  const heading = location.pathname.startsWith("/app/contacts")
-    ? "Contacts panel"
-    : location.pathname.startsWith("/app/sessions")
-      ? "Session details"
-      : "Profile summary";
+
+  if (location.pathname.startsWith("/app/contacts")) {
+    return <aside className="workspace-context">{panelContent}</aside>;
+  }
+
+  const heading = location.pathname.startsWith("/app/sessions")
+    ? "Session details"
+    : "Profile summary";
 
   return (
     <aside className="workspace-context">
@@ -53,6 +61,14 @@ function WorkspaceContextCard() {
 }
 
 export function AppFrame() {
+  return (
+    <WorkspaceContextPanelProvider>
+      <AppFrameLayout />
+    </WorkspaceContextPanelProvider>
+  );
+}
+
+function AppFrameLayout() {
   const location = useLocation();
   const { user, signOut } = useSession();
   const {
