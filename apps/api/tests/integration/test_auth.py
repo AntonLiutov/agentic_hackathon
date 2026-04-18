@@ -251,7 +251,10 @@ def test_password_reset_flow_invalidates_existing_sessions(
     assert forgot_payload["success"] is True
     assert (
         forgot_payload["message"]
-        == "If an account exists for this email, check Mailpit at http://localhost:8025 for the reset link."
+        == (
+            "If an account exists for this email, check Mailpit at "
+            "http://localhost:8025 for the reset link."
+        )
     )
     assert len(outbox) == 1
     assert outbox[0]["recipient_email"] == "reset@example.com"

@@ -4,7 +4,7 @@ Classic web chat platform built for the AI Herders Jam requirements.
 
 ## Current Status
 
-Sprint 1 foundation work is in progress. The repository now includes:
+Sprint 1 is complete and Sprint 2 room work has started. The repository now includes:
 
 - planning and architecture docs
 - backend and frontend application skeletons
@@ -14,6 +14,10 @@ Sprint 1 foundation work is in progress. The repository now includes:
 - working registration, login, session bootstrap, and logout flows
 - active session listing and targeted session revocation
 - password change and email-based password reset flow
+- public and private room creation
+- public room catalog with search
+- join and leave room flows
+- private-room invitation acceptance
 
 ## Repository Structure
 
@@ -100,9 +104,14 @@ Basic checks after startup:
 7. Open `/app/profile`, change the password, and confirm you are returned to sign-in with a success notice.
 8. Open `/forgot-password`, submit your email, then open Mailpit at `http://localhost:8025` and use the emailed reset link.
 9. Confirm old passwords and old browser sessions no longer work after the password rotation.
-10. Use the workspace sign-out action and confirm protected routes redirect back to `/signin`.
-11. Open `http://localhost:8000/healthz` and confirm the API returns `status: ok`.
-12. Open `http://localhost:3000/healthz` and confirm the web container health endpoint responds.
+10. In `/app/chats`, create one public room and one private room from the sidebar.
+11. Sign in with a second account and confirm only the public room appears in the public catalog.
+12. Join the public room and confirm it appears in `Your Rooms`.
+13. Sign back in as the private-room owner, invite the second user from the private room panel, then accept that invitation from the second account.
+14. Confirm the accepted private room appears in `Your Rooms` but never in the public catalog.
+15. Use the workspace sign-out action and confirm protected routes redirect back to `/signin`.
+16. Open `http://localhost:8000/healthz` and confirm the API returns `status: ok`.
+17. Open `http://localhost:3000/` and confirm the frontend responds.
 
 Stop the stack:
 
@@ -121,5 +130,6 @@ This repository currently targets:
 - `SP1-05 Registration and Login`
 - `SP1-06 Persistent Sessions`
 - `SP1-07 Password Management`
+- `SP2-01 Public and Private Rooms`
 
-The next implementation step is Sprint 2: conversations, rooms, history, and realtime messaging.
+The next implementation step is `SP2-02 Conversation Membership Rules`.
