@@ -56,6 +56,46 @@ class LoginRequest(BaseModel):
     password: PasswordValue
 
 
+class ChangePasswordRequest(BaseModel):
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "current_password": "correct-horse-battery-staple",
+                "new_password": "new-horse-battery-staple",
+            }
+        }
+    )
+
+    current_password: PasswordValue
+    new_password: PasswordValue
+
+
+class ForgotPasswordRequest(BaseModel):
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "email": "sarah@example.com",
+            }
+        }
+    )
+
+    email: EmailAddress
+
+
+class ResetPasswordRequest(BaseModel):
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "token": "paste-your-reset-token-here",
+                "new_password": "new-horse-battery-staple",
+            }
+        }
+    )
+
+    token: str
+    new_password: PasswordValue
+
+
 class AuthSessionResponse(BaseModel):
     user: AuthUserResponse
 
@@ -72,6 +112,15 @@ class UserSessionResponse(BaseModel):
 
 class UserSessionsResponse(BaseModel):
     sessions: list[UserSessionResponse]
+
+
+class ActionResponse(BaseModel):
+    success: bool = True
+    message: str
+
+
+class PasswordResetTokenStatusResponse(BaseModel):
+    valid: bool = True
 
 
 class LogoutResponse(BaseModel):

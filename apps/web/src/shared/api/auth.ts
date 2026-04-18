@@ -10,6 +10,11 @@ export type AuthSessionResponse = {
   user: AuthUser;
 };
 
+export type ActionResponse = {
+  success: boolean;
+  message: string;
+};
+
 export type ActiveSession = {
   id: string;
   user_agent: string | null;
@@ -35,6 +40,20 @@ export type LoginPayload = {
   password: string;
 };
 
+export type ChangePasswordPayload = {
+  current_password: string;
+  new_password: string;
+};
+
+export type ForgotPasswordPayload = {
+  email: string;
+};
+
+export type ResetPasswordPayload = {
+  token: string;
+  new_password: string;
+};
+
 export const authApi = {
   me: () => apiRequest<AuthSessionResponse>("/api/auth/me"),
   register: (payload: RegisterPayload) =>
@@ -50,6 +69,23 @@ export const authApi = {
   signOut: () =>
     apiRequest<{ success: boolean }>("/api/auth/logout", {
       method: "POST",
+    }),
+  changePassword: (payload: ChangePasswordPayload) =>
+    apiRequest<ActionResponse>("/api/auth/password/change", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+  requestPasswordReset: (payload: ForgotPasswordPayload) =>
+    apiRequest<ActionResponse>("/api/auth/password/forgot", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+  validateResetToken: (token: string) =>
+    apiRequest<{ valid: boolean }>(`/api/auth/password/reset/${encodeURIComponent(token)}`),
+  resetPassword: (payload: ResetPasswordPayload) =>
+    apiRequest<ActionResponse>("/api/auth/password/reset", {
+      method: "POST",
+      body: JSON.stringify(payload),
     }),
   listSessions: () => apiRequest<ActiveSessionsResponse>("/api/auth/sessions"),
   revokeSession: (sessionId: string) =>

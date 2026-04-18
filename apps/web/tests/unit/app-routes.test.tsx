@@ -228,4 +228,173 @@ describe("App routes", () => {
       expect(screen.queryByRole("heading", { name: "Firefox browser" })).not.toBeInTheDocument();
     });
   });
+
+  it("shows the local Mailpit guidance after requesting password recovery", async () => {
+    fetchMock.mockImplementation(async (input, init) => {
+      const url = typeof input === "string" ? input : input.toString();
+
+      if (url.endsWith("/api/auth/me")) {
+        return new Response(JSON.stringify({ detail: "Authentication required." }), {
+          status: 401,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      if (url.endsWith("/api/auth/password/forgot") && init?.method === "POST") {
+        return new Response(
+          JSON.stringify({
+            success: true,
+            message:
+              "If an account exists for this email, check Mailpit at http://localhost:8025 for the reset link.",
+          }),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          },
+        );
+      }
+
+      return new Response(JSON.stringify({ detail: "Unhandled request in test." }), {
+        status: 500,
+        headers: { "Content-Type": "application/json" },
+      });
+    });
+
+    renderRoutes(["/forgot-password"]);
+
+    fireEvent.change(screen.getByLabelText("Email"), {
+      target: { value: "preview@agentic.chat" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Send reset link" }));
+
+    await waitFor(() => {
+      expect(
+        screen.getByText(
+          "If an account exists for this email, check Mailpit at http://localhost:8025 for the reset link.",
+        ),
+      ).toBeInTheDocument();
+    });
+  });
+
+  it("completes the password reset flow from the reset page", async () => {
+    fetchMock.mockImplementation(async (input, init) => {
+      const url = typeof input === "string" ? input : input.toString();
+
+      if (url.endsWith("/api/auth/me")) {
+        return new Response(JSON.stringify({ detail: "Authentication required." }), {
+          status: 401,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      if (url.endsWith("/api/auth/password/reset/demo-token") && (!init?.method || init.method === "GET")) {
+        return new Response(JSON.stringify({ valid: true }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      if (url.endsWith("/api/auth/password/reset") && init?.method === "POST") {
+        return new Response(
+          JSON.stringify({
+            success: true,
+            message: "Password reset complete. Please sign in with your new password.",
+          }),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          },
+        );
+      }
+
+      return new Response(JSON.stringify({ detail: "Unhandled request in test." }), {
+        status: 500,
+        headers: { "Content-Type": "application/json" },
+      });
+    });
+
+    renderRoutes(["/reset-password?token=demo-token"]);
+
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { name: "Choose a new password" })).toBeInTheDocument();
+    });
+
+    fireEvent.change(screen.getByLabelText("New password"), {
+      target: { value: "brand-new-horse-battery-staple" },
+    });
+    fireEvent.change(screen.getByLabelText("Confirm password"), {
+      target: { value: "brand-new-horse-battery-staple" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save new password" }));
+
+    await waitFor(() => {
+      expect(
+        screen.getByText("Password reset complete. Please sign in with your new password."),
+      ).toBeInTheDocument();
+    });
+  });
+
+  it("changes the password from the profile page and returns to sign in", async () => {
+    fetchMock.mockImplementation(async (input, init) => {
+      const url = typeof input === "string" ? input : input.toString();
+
+      if (url.endsWith("/api/auth/me")) {
+        return new Response(
+          JSON.stringify({
+            user: {
+              id: "user-1",
+              username: "Preview User",
+              email: "preview@agentic.chat",
+            },
+          }),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          },
+        );
+      }
+
+      if (url.endsWith("/api/auth/password/change") && init?.method === "POST") {
+        return new Response(
+          JSON.stringify({
+            success: true,
+            message: "Password updated. Please sign in again with your new password.",
+          }),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          },
+        );
+      }
+
+      return new Response(JSON.stringify({ detail: "Unhandled request in test." }), {
+        status: 500,
+        headers: { "Content-Type": "application/json" },
+      });
+    });
+
+    renderRoutes(["/app/profile"]);
+
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { name: "Profile and password management" })).toBeInTheDocument();
+    });
+
+    fireEvent.change(screen.getByLabelText("Current password"), {
+      target: { value: "correct-horse-battery-staple" },
+    });
+    fireEvent.change(screen.getByLabelText("New password"), {
+      target: { value: "brand-new-horse-battery-staple" },
+    });
+    fireEvent.change(screen.getByLabelText("Confirm new password"), {
+      target: { value: "brand-new-horse-battery-staple" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Update password" }));
+
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { name: "Sign in" })).toBeInTheDocument();
+      expect(
+        screen.getByText("Password updated. Please sign in again with your new password."),
+      ).toBeInTheDocument();
+    });
+  });
 });

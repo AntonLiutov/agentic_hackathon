@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock
 import pytest
 from fastapi.testclient import TestClient
 
-from app.db.models.identity import User, UserCredential, UserSession
+from app.db.models.identity import PasswordResetToken, User, UserCredential, UserSession
 from app.db.session import DatabaseManager
 from app.main import app
 
@@ -27,7 +27,12 @@ async def _prepare_identity_schema(manager: DatabaseManager) -> None:
         await connection.run_sync(
             lambda sync_connection: User.metadata.create_all(
                 sync_connection,
-                tables=[User.__table__, UserCredential.__table__, UserSession.__table__],
+                tables=[
+                    User.__table__,
+                    UserCredential.__table__,
+                    UserSession.__table__,
+                    PasswordResetToken.__table__,
+                ],
             )
         )
 

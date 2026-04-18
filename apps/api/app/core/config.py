@@ -22,6 +22,14 @@ class Settings(BaseSettings):
     session_ttl_seconds: int = 60 * 60 * 24 * 30
     session_secret_key: str = Field(default="dev-only-session-secret-change-me")
     password_hash_iterations: int = 600_000
+    password_reset_token_ttl_seconds: int = 60 * 30
+    password_reset_base_url: str = "http://localhost:3000/reset-password"
+    smtp_host: str = "mailpit"
+    smtp_port: int = 1025
+    smtp_username: str | None = None
+    smtp_password: str | None = None
+    smtp_from_email: str = "no-reply@agentic.chat"
+    smtp_from_name: str = "Agentic Chat"
 
     model_config = SettingsConfigDict(
         env_file=".env",

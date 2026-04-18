@@ -4,6 +4,7 @@ import { AppFrame } from "../features/layout/app-frame";
 import { useSession } from "../features/session/use-session";
 import { ForgotPasswordPage } from "../pages/auth/ForgotPasswordPage";
 import { RegisterPage } from "../pages/auth/RegisterPage";
+import { ResetPasswordPage } from "../pages/auth/ResetPasswordPage";
 import { SignInPage } from "../pages/auth/SignInPage";
 import { LandingPage } from "../pages/LandingPage";
 import { ChatsPage } from "../pages/app/ChatsPage";
@@ -34,6 +35,7 @@ export function AppRouter() {
       <Route path="/signin" element={<SignInPage />} />
       <Route path="/register" element={<RegisterPage />} />
       <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+      <Route path="/reset-password" element={<ResetPasswordPage />} />
 
       <Route element={<ProtectedRoute />}>
         <Route path="/app" element={<AppFrame />}>

@@ -283,6 +283,12 @@ h2 {
   margin-top: 1rem;
 }
 
+.inline-link-button {
+  display: inline-flex;
+  justify-content: center;
+  align-items: center;
+}
+
 .auth-error {
   margin: 0;
   color: #ffb48a;
@@ -455,6 +461,8 @@ h2 {
   gap: 1.25rem;
 }
 
+.profile-panel,
+.profile-grid,
 .session-layout,
 .session-stack {
   display: grid;

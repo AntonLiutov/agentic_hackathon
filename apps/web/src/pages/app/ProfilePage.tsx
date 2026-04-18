@@ -1,27 +1,122 @@
-const profileSections = [
-  "Account details and immutable username display",
-  "Password management entry points",
-  "Delete-account confirmation flow",
-  "Delivery of future preference settings",
-];
+import { type FormEvent, useState } from "react";
+import { useNavigate } from "react-router-dom";
+
+import { useSession } from "../../features/session/use-session";
+import { authApi } from "../../shared/api/auth";
+import { getApiErrorMessage } from "../../shared/api/client";
 
 export function ProfilePage() {
+  const navigate = useNavigate();
+  const { user, clearSession } = useSession();
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setErrorMessage(null);
+
+    if (newPassword !== confirmPassword) {
+      setErrorMessage("Passwords do not match.");
+      return;
+    }
+
+    setIsSubmitting(true);
+
+    try {
+      await authApi.changePassword({
+        current_password: currentPassword,
+        new_password: newPassword,
+      });
+      window.sessionStorage.setItem(
+        "agentic_notice",
+        "Password updated. Please sign in again with your new password.",
+      );
+      navigate("/signin?notice=password-updated", {
+        replace: true,
+      });
+      clearSession();
+    } catch (error) {
+      setErrorMessage(getApiErrorMessage(error, "Unable to change your password right now."));
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
   return (
-    <section className="placeholder-panel card">
+    <section className="placeholder-panel card profile-panel">
       <p className="eyebrow">Profile</p>
-      <h1>Profile and account shell</h1>
+      <h1>Profile and password management</h1>
       <p>
-        This route will later connect to password change, account deletion, and profile-level
-        controls required by the specification.
+        Review your immutable account details and rotate your password. For safety, changing the
+        password signs every browser session out and requires a fresh sign-in.
       </p>
 
-      <ul className="feature-list">
-        {profileSections.map((section) => (
-          <li key={section}>
-            <strong>{section}</strong>
-          </li>
-        ))}
-      </ul>
+      <div className="profile-grid">
+        <article className="session-card">
+          <p className="session-card-kicker">Account</p>
+          <h2>{user?.name}</h2>
+          <dl className="session-meta">
+            <div>
+              <dt>Username</dt>
+              <dd>{user?.username}</dd>
+            </div>
+            <div>
+              <dt>Email</dt>
+              <dd>{user?.email}</dd>
+            </div>
+          </dl>
+        </article>
+
+        <article className="session-card">
+          <p className="session-card-kicker">Security</p>
+          <h2>Change password</h2>
+          <form className="auth-form" onSubmit={handleSubmit}>
+            <label>
+              <span>Current password</span>
+              <input
+                type="password"
+                placeholder="********"
+                value={currentPassword}
+                onChange={(event) => setCurrentPassword(event.target.value)}
+                autoComplete="current-password"
+                minLength={8}
+                required
+              />
+            </label>
+            <label>
+              <span>New password</span>
+              <input
+                type="password"
+                placeholder="********"
+                value={newPassword}
+                onChange={(event) => setNewPassword(event.target.value)}
+                autoComplete="new-password"
+                minLength={8}
+                required
+              />
+            </label>
+            <label>
+              <span>Confirm new password</span>
+              <input
+                type="password"
+                placeholder="********"
+                value={confirmPassword}
+                onChange={(event) => setConfirmPassword(event.target.value)}
+                autoComplete="new-password"
+                minLength={8}
+                required
+              />
+            </label>
+            {errorMessage ? <p className="auth-error">{errorMessage}</p> : null}
+            <button className="primary-button" type="submit" disabled={isSubmitting}>
+              {isSubmitting ? "Updating password..." : "Update password"}
+            </button>
+          </form>
+        </article>
+      </div>
     </section>
   );
 }

@@ -7,22 +7,31 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.dependencies import get_db_session, get_settings_from_request
 from app.api.schemas.auth import (
+    ActionResponse,
     AuthSessionResponse,
     AuthUserResponse,
+    ChangePasswordRequest,
+    ForgotPasswordRequest,
     LoginRequest,
     LogoutResponse,
+    PasswordResetTokenStatusResponse,
     RegisterRequest,
+    ResetPasswordRequest,
     UserSessionsResponse,
 )
 from app.auth.service import (
     attach_session_cookie,
+    change_password,
     clear_session_cookie,
     get_auth_context,
     list_active_sessions,
     login_user,
     register_user,
+    request_password_reset,
+    reset_password,
     revoke_session,
     revoke_session_by_id,
+    validate_password_reset_token,
 )
 from app.core.config import Settings
 
@@ -181,3 +190,89 @@ async def revoke_selected_session(
     )
     await revoke_session_by_id(db, auth_context=auth_context, session_id=session_id)
     return LogoutResponse()
+
+
+@router.post(
+    "/password/change",
+    response_model=ActionResponse,
+    summary="Change password for the current user",
+    description=(
+        "Verifies the current password, stores a new password hash, revokes all active "
+        "sessions for the user, and clears the current browser cookie."
+    ),
+)
+async def change_current_password(
+    request: Request,
+    response: Response,
+    payload: ChangePasswordRequest = Body(...),
+    db: AsyncSession = Depends(get_db_session),
+    settings: Settings = Depends(get_settings_from_request),
+) -> ActionResponse:
+    auth_context = await get_auth_context(
+        db,
+        settings=settings,
+        session_token=request.cookies.get(settings.session_cookie_name),
+        touch_session=False,
+        required=True,
+    )
+    await change_password(db, auth_context=auth_context, payload=payload, settings=settings)
+    clear_session_cookie(response, settings=settings)
+    return ActionResponse(
+        success=True,
+        message="Password updated. Please sign in again with your new password.",
+    )
+
+
+@router.post(
+    "/password/forgot",
+    response_model=ActionResponse,
+    summary="Request a password reset link",
+    description=(
+        "Accepts an email address, sends a password reset email when the account exists, "
+        "and does not reveal whether the account exists."
+    ),
+)
+async def forgot_password(
+    payload: ForgotPasswordRequest = Body(...),
+    db: AsyncSession = Depends(get_db_session),
+    settings: Settings = Depends(get_settings_from_request),
+) -> ActionResponse:
+    return await request_password_reset(db, payload=payload, settings=settings)
+
+
+@router.get(
+    "/password/reset/{token}",
+    response_model=PasswordResetTokenStatusResponse,
+    summary="Validate a password reset token",
+    description="Checks whether the provided password reset token is still valid.",
+)
+async def validate_reset_token(
+    token: str,
+    db: AsyncSession = Depends(get_db_session),
+    settings: Settings = Depends(get_settings_from_request),
+) -> PasswordResetTokenStatusResponse:
+    await validate_password_reset_token(db, settings=settings, token=token)
+    return PasswordResetTokenStatusResponse(valid=True)
+
+
+@router.post(
+    "/password/reset",
+    response_model=ActionResponse,
+    summary="Complete a password reset",
+    description=(
+        "Consumes a valid reset token, stores a new password hash, revokes all active "
+        "sessions for the user, and requires a fresh sign-in."
+    ),
+)
+async def complete_password_reset(
+    response: Response,
+    payload: ResetPasswordRequest = Body(...),
+    db: AsyncSession = Depends(get_db_session),
+    settings: Settings = Depends(get_settings_from_request),
+) -> ActionResponse:
+    await reset_password(db, payload=payload, settings=settings)
+    clear_session_cookie(response, settings=settings)
+    return ActionResponse(
+        success=True,
+        message="Password reset complete. Please sign in with your new password.",
+    )
