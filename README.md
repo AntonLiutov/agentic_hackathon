@@ -12,6 +12,7 @@ Sprint 1 foundation work is in progress. The repository now includes:
 - health checks and example environment configuration
 - frontend route skeleton for landing, auth, and workspace flows
 - working registration, login, session bootstrap, and logout flows
+- active session listing and targeted session revocation
 
 ## Repository Structure
 
@@ -91,9 +92,12 @@ Basic checks after startup:
 1. Open `http://localhost:3000` and confirm the foundation page loads.
 2. Register a new account from `/register` and confirm you are redirected into `/app/chats`.
 3. Refresh the browser and confirm the session is restored automatically.
-4. Use the workspace sign-out action and confirm protected routes redirect back to `/signin`.
-5. Open `http://localhost:8000/healthz` and confirm the API returns `status: ok`.
-6. Open `http://localhost:3000/healthz` and confirm the web container health endpoint responds.
+4. Open `/app/sessions` and confirm the current browser session is shown separately from other active sessions.
+5. Sign in to the same account in another browser or private window, then revoke that other session from `/app/sessions`.
+6. Confirm the revoked browser can no longer access protected routes, while the current browser stays signed in.
+7. Use the workspace sign-out action and confirm protected routes redirect back to `/signin`.
+8. Open `http://localhost:8000/healthz` and confirm the API returns `status: ok`.
+9. Open `http://localhost:3000/healthz` and confirm the web container health endpoint responds.
 
 Stop the stack:
 
@@ -110,5 +114,6 @@ This repository currently targets:
 - `SP1-03 Frontend Foundation`
 - `SP1-04 Core Schema`
 - `SP1-05 Registration and Login`
+- `SP1-06 Persistent Sessions`
 
-The next implementation step is active session management and selective session revocation.
+The next implementation step is password change and password reset.
