@@ -29,6 +29,7 @@ from app.db.models.conversation import (
 )
 from app.db.models.enums import ConversationType, InvitationStatus, RoomVisibility
 from app.db.models.identity import User
+from app.db.models.message import ConversationRead
 
 
 @dataclass
@@ -38,6 +39,7 @@ class _RoomProjection:
     joined_at: datetime | None
     is_banned: bool
     is_admin: bool
+    unread_count: int
 
 
 @dataclass
@@ -84,6 +86,7 @@ def _project_room_summary(
         can_leave=is_member and not is_owner,
         can_manage_members=projection.is_admin,
         joined_at=projection.joined_at,
+        unread_count=projection.unread_count if is_member else 0,
     )
 
 
@@ -261,6 +264,7 @@ async def create_room(
         can_join=False,
         can_leave=False,
         joined_at=room_conversation.created_at,
+        unread_count=0,
     )
 
 
@@ -286,11 +290,20 @@ async def list_public_rooms(
             func.coalesce(counts.c.member_count, 0),
             ConversationMember.joined_at,
             RoomBan.id,
+            Conversation.message_sequence_head,
+            func.coalesce(ConversationRead.last_read_sequence_number, 0),
         )
         .join(Conversation, Conversation.id == RoomMetadata.conversation_id)
         .outerjoin(counts, counts.c.conversation_id == RoomMetadata.conversation_id)
         .outerjoin(ConversationMember, membership_join)
         .outerjoin(RoomBan, ban_join)
+        .outerjoin(
+            ConversationRead,
+            and_(
+                ConversationRead.conversation_id == RoomMetadata.conversation_id,
+                ConversationRead.user_id == user.id,
+            ),
+        )
         .where(
             Conversation.type == ConversationType.ROOM,
             RoomMetadata.visibility == RoomVisibility.PUBLIC,
@@ -316,10 +329,23 @@ async def list_public_rooms(
                 joined_at=joined_at,
                 is_banned=ban_id is not None,
                 is_admin=False,
+                unread_count=max(
+                    0,
+                    int(message_sequence_head or 0) - int(last_read_sequence_number or 0),
+                )
+                if joined_at is not None
+                else 0,
             ),
             user_id=user.id,
         )
-        for room, member_count, joined_at, ban_id in rows
+        for (
+            room,
+            member_count,
+            joined_at,
+            ban_id,
+            message_sequence_head,
+            last_read_sequence_number,
+        ) in rows
     ]
 
 
@@ -335,6 +361,8 @@ async def list_my_rooms(
             func.coalesce(counts.c.member_count, 0),
             ConversationMember.joined_at,
             RoomAdmin.user_id,
+            Conversation.message_sequence_head,
+            func.coalesce(ConversationRead.last_read_sequence_number, 0),
         )
         .join(Conversation, Conversation.id == RoomMetadata.conversation_id)
         .join(
@@ -351,6 +379,13 @@ async def list_my_rooms(
                 RoomAdmin.user_id == user.id,
             ),
         )
+        .outerjoin(
+            ConversationRead,
+            and_(
+                ConversationRead.conversation_id == RoomMetadata.conversation_id,
+                ConversationRead.user_id == user.id,
+            ),
+        )
         .outerjoin(counts, counts.c.conversation_id == RoomMetadata.conversation_id)
         .where(Conversation.type == ConversationType.ROOM)
         .order_by(RoomMetadata.name.asc())
@@ -365,10 +400,21 @@ async def list_my_rooms(
                 joined_at=joined_at,
                 is_banned=False,
                 is_admin=admin_user_id is not None,
+                unread_count=max(
+                    0,
+                    int(message_sequence_head or 0) - int(last_read_sequence_number or 0),
+                ),
             ),
             user_id=user.id,
         )
-        for room, member_count, joined_at, admin_user_id in rows
+        for (
+            room,
+            member_count,
+            joined_at,
+            admin_user_id,
+            message_sequence_head,
+            last_read_sequence_number,
+        ) in rows
     ]
 
 
@@ -759,6 +805,8 @@ async def get_room_summary(
             ConversationMember.joined_at,
             RoomBan.id,
             RoomAdmin.user_id,
+            Conversation.message_sequence_head,
+            func.coalesce(ConversationRead.last_read_sequence_number, 0),
         )
         .join(Conversation, Conversation.id == RoomMetadata.conversation_id)
         .outerjoin(counts, counts.c.conversation_id == RoomMetadata.conversation_id)
@@ -783,6 +831,13 @@ async def get_room_summary(
                 RoomAdmin.user_id == user.id,
             ),
         )
+        .outerjoin(
+            ConversationRead,
+            and_(
+                ConversationRead.conversation_id == RoomMetadata.conversation_id,
+                ConversationRead.user_id == user.id,
+            ),
+        )
         .where(
             RoomMetadata.conversation_id == room_id,
             Conversation.type == ConversationType.ROOM,
@@ -796,7 +851,15 @@ async def get_room_summary(
             detail="Room not found.",
         )
 
-    room, member_count, joined_at, ban_id, admin_user_id = row
+    (
+        room,
+        member_count,
+        joined_at,
+        ban_id,
+        admin_user_id,
+        message_sequence_head,
+        last_read_sequence_number,
+    ) = row
 
     if (
         room.visibility == RoomVisibility.PRIVATE
@@ -815,6 +878,12 @@ async def get_room_summary(
             joined_at=joined_at,
             is_banned=ban_id is not None,
             is_admin=admin_user_id is not None,
+            unread_count=max(
+                0,
+                int(message_sequence_head or 0) - int(last_read_sequence_number or 0),
+            )
+            if joined_at is not None
+            else 0,
         ),
         user_id=user.id,
     )

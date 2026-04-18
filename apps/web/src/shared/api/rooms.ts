@@ -17,6 +17,7 @@ export type RoomSummary = {
   can_leave: boolean;
   can_manage_members: boolean;
   joined_at: string | null;
+  unread_count: number;
 };
 
 export type RoomMember = {

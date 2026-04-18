@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -41,6 +41,10 @@ class MockWebSocket {
   }
 }
 
+function findWebSocketByPath(path: string) {
+  return MockWebSocket.instances.find((socket) => socket.url.includes(path));
+}
+
 function renderRoutes(initialEntries: string[]) {
   return render(
     <AppProviders>
@@ -60,6 +64,7 @@ describe("Message lifecycle", () => {
   });
 
   afterEach(() => {
+    cleanup();
     fetchMock.mockReset();
     MockWebSocket.reset();
     vi.unstubAllGlobals();
@@ -820,6 +825,17 @@ describe("Message lifecycle", () => {
         );
       }
 
+      if (url.endsWith("/api/conversations/room-engineering/read") && init?.method === "POST") {
+        return new Response(
+          JSON.stringify({
+            conversation_id: "room-engineering",
+            last_read_sequence_number: 1,
+            unread_count: 0,
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        );
+      }
+
       if (url.endsWith("/api/dms/mine")) {
         return new Response(JSON.stringify({ direct_messages: [] }), {
           status: 200,
@@ -841,11 +857,11 @@ describe("Message lifecycle", () => {
 
     await waitFor(() => {
       expect(screen.getByText("live updates")).toBeInTheDocument();
-      expect(MockWebSocket.instances).toHaveLength(1);
+      expect(findWebSocketByPath("/ws/conversations/room-engineering")).toBeTruthy();
     });
 
     await act(async () => {
-      MockWebSocket.instances[0].emit({
+      findWebSocketByPath("/ws/conversations/room-engineering")?.emit({
         type: "message.created",
         conversation_id: "room-engineering",
         sequence_head: 2,
@@ -873,5 +889,12 @@ describe("Message lifecycle", () => {
       expect(screen.getByText("Message delivered live")).toBeInTheDocument();
       expect(screen.getByText("sequence 2")).toBeInTheDocument();
     });
-  });
+
+    const liveMessageCard = screen.getByText("Message delivered live").closest("article");
+    expect(liveMessageCard).not.toBeNull();
+    if (liveMessageCard) {
+      expect(within(liveMessageCard).queryByRole("button", { name: "Edit" })).not.toBeInTheDocument();
+      expect(within(liveMessageCard).queryByRole("button", { name: "Delete" })).not.toBeInTheDocument();
+    }
+  }, 15_000);
 });

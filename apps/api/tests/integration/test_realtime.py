@@ -110,3 +110,79 @@ def test_dm_websocket_streams_message_creation(auth_client: TestClient) -> None:
         assert created_event["type"] == "message.created"
         assert created_event["message"]["conversation_id"] == dm_id
         assert created_event["message"]["body_text"] == "Realtime DM message"
+
+
+def test_room_realtime_message_permissions_are_projected_per_recipient(
+    auth_client: TestClient,
+) -> None:
+    _register_user(auth_client, email="rt-owner@example.com", username="rt.owner")
+    room_response = auth_client.post(
+        "/api/rooms",
+        json={
+            "name": "rt-room-permissions",
+            "description": "Room for recipient permission projection.",
+            "visibility": "public",
+        },
+    )
+    assert room_response.status_code == 201
+    room_id = room_response.json()["id"]
+
+    auth_client.post("/api/auth/logout")
+    _register_user(auth_client, email="rt-guest@example.com", username="rt.guest")
+    join_response = auth_client.post(f"/api/rooms/{room_id}/join")
+    assert join_response.status_code == 200
+
+    with auth_client.websocket_connect(f"/ws/conversations/{room_id}") as websocket:
+        subscribed_event = websocket.receive_json()
+        assert subscribed_event["type"] == "conversation.subscribed"
+
+        auth_client.post("/api/auth/logout")
+        _login_user(auth_client, email="rt-owner@example.com")
+
+        create_response = auth_client.post(
+            f"/api/conversations/{room_id}/messages",
+            json={"body_text": "Owner message for guest permissions"},
+        )
+        assert create_response.status_code == 201
+
+        created_event = websocket.receive_json()
+        assert created_event["type"] == "message.created"
+        assert created_event["message"]["body_text"] == "Owner message for guest permissions"
+        assert created_event["message"]["can_edit"] is False
+        assert created_event["message"]["can_delete"] is False
+
+
+def test_dm_realtime_message_permissions_are_projected_per_recipient(
+    auth_client: TestClient,
+) -> None:
+    _register_user(auth_client, email="rt-dm-owner@example.com", username="rt.dm.owner")
+    auth_client.post("/api/auth/logout")
+    _register_user(auth_client, email="rt-dm-guest@example.com", username="rt.dm.guest")
+    auth_client.post("/api/auth/logout")
+
+    _login_user(auth_client, email="rt-dm-owner@example.com")
+    dm_response = auth_client.post("/api/dms", json={"username": "rt.dm.guest"})
+    assert dm_response.status_code == 201
+    dm_id = dm_response.json()["id"]
+
+    auth_client.post("/api/auth/logout")
+    _login_user(auth_client, email="rt-dm-guest@example.com")
+
+    with auth_client.websocket_connect(f"/ws/conversations/{dm_id}") as websocket:
+        subscribed_event = websocket.receive_json()
+        assert subscribed_event["type"] == "conversation.subscribed"
+
+        auth_client.post("/api/auth/logout")
+        _login_user(auth_client, email="rt-dm-owner@example.com")
+
+        create_response = auth_client.post(
+            f"/api/conversations/{dm_id}/messages",
+            json={"body_text": "Owner DM message for recipient permissions"},
+        )
+        assert create_response.status_code == 201
+
+        created_event = websocket.receive_json()
+        assert created_event["type"] == "message.created"
+        assert created_event["message"]["body_text"] == "Owner DM message for recipient permissions"
+        assert created_event["message"]["can_edit"] is False
+        assert created_event["message"]["can_delete"] is False

@@ -246,3 +246,74 @@ def test_message_history_supports_cursor_pagination(auth_client: TestClient) -> 
     assert older_payload["next_before_sequence"] is None
     assert older_payload["has_older"] is False
     assert [message["sequence_number"] for message in older_payload["messages"]] == [1, 2]
+
+
+def test_unread_counts_increment_and_clear_when_conversation_is_opened(
+    auth_client: TestClient,
+) -> None:
+    _register_user(auth_client, email="unread-owner@example.com", username="unread.owner")
+    room_response = auth_client.post(
+        "/api/rooms",
+        json={
+            "name": "unread-room",
+            "description": "Room for unread state testing.",
+            "visibility": "public",
+        },
+    )
+    assert room_response.status_code == 201
+    room_id = room_response.json()["id"]
+
+    auth_client.post("/api/auth/logout")
+    _register_user(auth_client, email="unread-guest@example.com", username="unread.guest")
+    join_response = auth_client.post(f"/api/rooms/{room_id}/join")
+    assert join_response.status_code == 200
+
+    auth_client.post("/api/auth/logout")
+    _login_user(auth_client, email="unread-owner@example.com")
+    create_response = auth_client.post(
+        f"/api/conversations/{room_id}/messages",
+        json={"body_text": "Unread room message"},
+    )
+    assert create_response.status_code == 201
+
+    auth_client.post("/api/auth/logout")
+    _login_user(auth_client, email="unread-guest@example.com")
+
+    my_rooms_response = auth_client.get("/api/rooms/mine")
+    assert my_rooms_response.status_code == 200
+    assert my_rooms_response.json()["rooms"][0]["unread_count"] == 1
+
+    mark_read_response = auth_client.post(f"/api/conversations/{room_id}/read")
+    assert mark_read_response.status_code == 200
+    assert mark_read_response.json()["unread_count"] == 0
+
+    refreshed_rooms_response = auth_client.get("/api/rooms/mine")
+    assert refreshed_rooms_response.status_code == 200
+    assert refreshed_rooms_response.json()["rooms"][0]["unread_count"] == 0
+
+    auth_client.post("/api/auth/logout")
+    _login_user(auth_client, email="unread-owner@example.com")
+    dm_response = auth_client.post("/api/dms", json={"username": "unread.guest"})
+    assert dm_response.status_code == 201
+    dm_id = dm_response.json()["id"]
+
+    dm_message_response = auth_client.post(
+        f"/api/conversations/{dm_id}/messages",
+        json={"body_text": "Unread direct message"},
+    )
+    assert dm_message_response.status_code == 201
+
+    auth_client.post("/api/auth/logout")
+    _login_user(auth_client, email="unread-guest@example.com")
+
+    direct_messages_response = auth_client.get("/api/dms/mine")
+    assert direct_messages_response.status_code == 200
+    assert direct_messages_response.json()["direct_messages"][0]["unread_count"] == 1
+
+    dm_mark_read_response = auth_client.post(f"/api/conversations/{dm_id}/read")
+    assert dm_mark_read_response.status_code == 200
+    assert dm_mark_read_response.json()["unread_count"] == 0
+
+    refreshed_direct_messages_response = auth_client.get("/api/dms/mine")
+    assert refreshed_direct_messages_response.status_code == 200
+    assert refreshed_direct_messages_response.json()["direct_messages"][0]["unread_count"] == 0

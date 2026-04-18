@@ -45,6 +45,19 @@ export function useConversationRealtime({
   const reconnectTimeoutRef = useRef<number | null>(null);
   const socketRef = useRef<WebSocket | null>(null);
   const reconnectAttemptRef = useRef(0);
+  const handlersRef = useRef({
+    onMessageCreated,
+    onMessageUpdated,
+    onMessageDeleted,
+  });
+
+  useEffect(() => {
+    handlersRef.current = {
+      onMessageCreated,
+      onMessageUpdated,
+      onMessageDeleted,
+    };
+  }, [onMessageCreated, onMessageDeleted, onMessageUpdated]);
 
   useEffect(() => {
     if (!enabled || !conversationId || typeof WebSocket === "undefined") {
@@ -81,17 +94,17 @@ export function useConversationRealtime({
         const payload = JSON.parse(event.data) as RealtimeEnvelope;
 
         if (payload.type === "message.created") {
-          onMessageCreated(payload.message, payload.sequence_head ?? null);
+          handlersRef.current.onMessageCreated(payload.message, payload.sequence_head ?? null);
           return;
         }
 
         if (payload.type === "message.updated") {
-          onMessageUpdated(payload.message);
+          handlersRef.current.onMessageUpdated(payload.message);
           return;
         }
 
         if (payload.type === "message.deleted") {
-          onMessageDeleted(payload.message);
+          handlersRef.current.onMessageDeleted(payload.message);
         }
       };
 
@@ -125,13 +138,7 @@ export function useConversationRealtime({
       socketRef.current?.close();
       socketRef.current = null;
     };
-  }, [
-    conversationId,
-    enabled,
-    onMessageCreated,
-    onMessageDeleted,
-    onMessageUpdated,
-  ]);
+  }, [conversationId, enabled]);
 
   return {
     status,

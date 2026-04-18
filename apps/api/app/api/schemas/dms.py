@@ -17,6 +17,7 @@ class DirectMessageSummaryResponse(BaseModel):
     created_at: datetime
     is_initiator: bool
     can_message: bool
+    unread_count: int = 0
 
 
 class DirectMessageListResponse(BaseModel):

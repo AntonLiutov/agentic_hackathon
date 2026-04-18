@@ -11,19 +11,14 @@ import {
 } from "react";
 
 import { getApiErrorMessage } from "../../shared/api/client";
-import { dmsApi, type DirectMessage } from "../../shared/api/dms";
+import { useDirectMessages } from "../../features/direct-messages/use-direct-messages";
 import {
   messagesApi,
   type ConversationMessage,
 } from "../../shared/api/messages";
 import { useWorkspaceContextPanel } from "../../features/layout/workspace-context-panel";
+import { useSession } from "../../features/session/use-session";
 import { useConversationRealtime } from "../../shared/realtime/useConversationRealtime";
-
-function sortDirectMessages(directMessages: DirectMessage[]) {
-  return [...directMessages].sort((left, right) =>
-    left.counterpart_username.localeCompare(right.counterpart_username),
-  );
-}
 
 function formatMessageTime(value: string) {
   return new Date(value).toLocaleTimeString([], {
@@ -59,9 +54,20 @@ function upsertConversationMessage(
 }
 
 export function ContactsPage() {
+  const { user } = useSession();
   const { setPanelContent } = useWorkspaceContextPanel();
-  const [directMessages, setDirectMessages] = useState<DirectMessage[]>([]);
-  const [selectedDirectMessageId, setSelectedDirectMessageId] = useState<string | null>(null);
+  const {
+    clearMessages: clearDirectMessageMessages,
+    clearUnread,
+    directMessages,
+    errorMessage: directMessagesError,
+    isLoading,
+    noticeMessage: directMessagesNotice,
+    openDirectMessage,
+    selectedDirectMessage,
+    selectedDirectMessageId,
+    selectDirectMessage,
+  } = useDirectMessages();
   const [username, setUsername] = useState("");
   const [composeText, setComposeText] = useState("");
   const [messages, setMessages] = useState<ConversationMessage[]>([]);
@@ -70,14 +76,13 @@ export function ContactsPage() {
   const [nextBeforeSequence, setNextBeforeSequence] = useState<number | null>(null);
   const [replyTarget, setReplyTarget] = useState<ConversationMessage | null>(null);
   const [editingMessageId, setEditingMessageId] = useState<number | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
   const [isLoadingMessages, setIsLoadingMessages] = useState(false);
   const [isLoadingOlderMessages, setIsLoadingOlderMessages] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSubmittingMessage, setIsSubmittingMessage] = useState(false);
   const [updatingMessageId, setUpdatingMessageId] = useState<number | null>(null);
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [noticeMessage, setNoticeMessage] = useState<string | null>(null);
+  const [pageErrorMessage, setPageErrorMessage] = useState<string | null>(null);
+  const [pageNoticeMessage, setPageNoticeMessage] = useState<string | null>(null);
   const messageListRef = useRef<HTMLDivElement | null>(null);
   const shouldAutoScrollRef = useRef(false);
   const pendingScrollRestoreRef = useRef<{ previousHeight: number; previousTop: number } | null>(
@@ -121,52 +126,7 @@ export function ContactsPage() {
       container.scrollTop = container.scrollHeight;
       shouldAutoScrollRef.current = false;
     }
-  }, [messages]);
-
-  useEffect(() => {
-    let isCancelled = false;
-
-    async function loadDirectMessages() {
-      setIsLoading(true);
-      setErrorMessage(null);
-
-      try {
-        const response = await dmsApi.listMine();
-
-        if (isCancelled) {
-          return;
-        }
-
-        setDirectMessages(sortDirectMessages(response.direct_messages));
-        setSelectedDirectMessageId((currentSelection) => {
-          if (
-            currentSelection &&
-            response.direct_messages.some(
-              (directMessage: DirectMessage) => directMessage.id === currentSelection,
-            )
-          ) {
-            return currentSelection;
-          }
-
-          return response.direct_messages[0]?.id ?? null;
-        });
-      } catch (error) {
-        if (!isCancelled) {
-          setErrorMessage(getApiErrorMessage(error, "Unable to load direct messages right now."));
-        }
-      } finally {
-        if (!isCancelled) {
-          setIsLoading(false);
-        }
-      }
-    }
-
-    void loadDirectMessages();
-
-    return () => {
-      isCancelled = true;
-    };
-  }, []);
+  }, [isLoadingMessages, messages]);
 
   useEffect(() => {
     let isCancelled = false;
@@ -181,22 +141,25 @@ export function ContactsPage() {
         setEditingMessageId(null);
         setComposeText("");
         setIsLoadingMessages(false);
+        clearDirectMessageMessages();
         return;
       }
 
       setIsLoadingMessages(true);
-      setErrorMessage(null);
+      setPageErrorMessage(null);
       shouldAutoScrollRef.current = true;
 
       try {
         await loadLatestMessages(selectedDirectMessageId);
+        await messagesApi.markRead(selectedDirectMessageId);
+        clearUnread(selectedDirectMessageId);
 
         if (isCancelled) {
           return;
         }
       } catch (error) {
         if (!isCancelled) {
-          setErrorMessage(getApiErrorMessage(error, "Unable to load direct messages right now."));
+          setPageErrorMessage(getApiErrorMessage(error, "Unable to load direct messages right now."));
         }
       } finally {
         if (!isCancelled) {
@@ -210,7 +173,7 @@ export function ContactsPage() {
     return () => {
       isCancelled = true;
     };
-  }, [loadLatestMessages, selectedDirectMessageId]);
+  }, [clearDirectMessageMessages, clearUnread, loadLatestMessages, selectedDirectMessageId]);
 
   async function loadOlderMessages() {
     if (!selectedDirectMessageId || !nextBeforeSequence || isLoadingOlderMessages) {
@@ -243,7 +206,7 @@ export function ContactsPage() {
       setNextBeforeSequence(response.next_before_sequence);
     } catch (error) {
       pendingScrollRestoreRef.current = null;
-      setErrorMessage(getApiErrorMessage(error, "Unable to load older messages right now."));
+      setPageErrorMessage(getApiErrorMessage(error, "Unable to load older messages right now."));
     } finally {
       setIsLoadingOlderMessages(false);
     }
@@ -261,27 +224,19 @@ export function ContactsPage() {
 
   const handleOpenDirectMessage = useCallback(async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    setErrorMessage(null);
-    setNoticeMessage(null);
+    setPageErrorMessage(null);
+    setPageNoticeMessage(null);
     setIsSubmitting(true);
 
     try {
-      const directMessage = await dmsApi.open({ username });
-      setDirectMessages((currentDirectMessages) => {
-        const nextDirectMessages = currentDirectMessages.filter(
-          (currentDirectMessage) => currentDirectMessage.id !== directMessage.id,
-        );
-        return sortDirectMessages([...nextDirectMessages, directMessage]);
-      });
-      setSelectedDirectMessageId(directMessage.id);
+      await openDirectMessage({ username });
       setUsername("");
-      setNoticeMessage(`Direct message ready with ${directMessage.counterpart_username}.`);
     } catch (error) {
-      setErrorMessage(getApiErrorMessage(error, "Unable to open that direct message right now."));
+      setPageErrorMessage(getApiErrorMessage(error, "Unable to open that direct message right now."));
     } finally {
       setIsSubmitting(false);
     }
-  }, [username]);
+  }, [openDirectMessage, username]);
 
   function resetComposerState() {
     setComposeText("");
@@ -296,8 +251,8 @@ export function ContactsPage() {
       return;
     }
 
-    setErrorMessage(null);
-    setNoticeMessage(null);
+    setPageErrorMessage(null);
+    setPageNoticeMessage(null);
     setIsSubmittingMessage(true);
 
     try {
@@ -308,7 +263,7 @@ export function ContactsPage() {
         setMessages((currentMessages) =>
           upsertConversationMessage(currentMessages, updatedMessage),
         );
-        setNoticeMessage("Message updated.");
+        setPageNoticeMessage("Message updated.");
       } else {
         shouldAutoScrollRef.current = isNearBottom();
         const createdMessage = await messagesApi.create(selectedDirectMessage.id, {
@@ -325,7 +280,7 @@ export function ContactsPage() {
 
       resetComposerState();
     } catch (error) {
-      setErrorMessage(getApiErrorMessage(error, "Unable to save that message right now."));
+      setPageErrorMessage(getApiErrorMessage(error, "Unable to save that message right now."));
     } finally {
       setIsSubmittingMessage(false);
     }
@@ -335,21 +290,21 @@ export function ContactsPage() {
     setEditingMessageId(null);
     setReplyTarget(message);
     setComposeText("");
-    setErrorMessage(null);
-    setNoticeMessage(null);
+    setPageErrorMessage(null);
+    setPageNoticeMessage(null);
   }
 
   function handleEdit(message: ConversationMessage) {
     setReplyTarget(null);
     setEditingMessageId(message.id);
     setComposeText(message.body_text ?? "");
-    setErrorMessage(null);
-    setNoticeMessage(null);
+    setPageErrorMessage(null);
+    setPageNoticeMessage(null);
   }
 
   async function handleDelete(message: ConversationMessage) {
-    setErrorMessage(null);
-    setNoticeMessage(null);
+    setPageErrorMessage(null);
+    setPageNoticeMessage(null);
     setUpdatingMessageId(message.id);
 
     try {
@@ -362,17 +317,11 @@ export function ContactsPage() {
         resetComposerState();
       }
     } catch (error) {
-      setErrorMessage(getApiErrorMessage(error, "Unable to delete that message right now."));
+      setPageErrorMessage(getApiErrorMessage(error, "Unable to delete that message right now."));
     } finally {
       setUpdatingMessageId(null);
     }
   }
-
-  const selectedDirectMessage = useMemo(
-    () =>
-      directMessages.find((directMessage) => directMessage.id === selectedDirectMessageId) ?? null,
-    [directMessages, selectedDirectMessageId],
-  );
 
   const realtime = useConversationRealtime({
     conversationId: selectedDirectMessageId,
@@ -400,8 +349,13 @@ export function ContactsPage() {
         setSequenceHead((currentSequenceHead) =>
           Math.max(currentSequenceHead, liveSequenceHead ?? message.sequence_number),
         );
+        if (message.author_user_id && message.author_user_id !== user?.id && selectedDirectMessageId) {
+          void messagesApi.markRead(selectedDirectMessageId).then(() => {
+            clearUnread(selectedDirectMessageId);
+          });
+        }
       },
-      [loadLatestMessages, selectedDirectMessageId],
+      [clearUnread, loadLatestMessages, selectedDirectMessageId, user?.id],
     ),
     onMessageUpdated: useCallback((message) => {
       setMessages((currentMessages) => {
@@ -467,8 +421,10 @@ export function ContactsPage() {
 
   return (
     <section className="chat-workspace card">
-      {errorMessage ? <p className="auth-error">{errorMessage}</p> : null}
-      {noticeMessage ? <p className="auth-success">{noticeMessage}</p> : null}
+      {directMessagesError ? <p className="auth-error">{directMessagesError}</p> : null}
+      {directMessagesNotice ? <p className="auth-success">{directMessagesNotice}</p> : null}
+      {pageErrorMessage ? <p className="auth-error">{pageErrorMessage}</p> : null}
+      {pageNoticeMessage ? <p className="auth-success">{pageNoticeMessage}</p> : null}
 
       <div className="chat-room-layout chat-room-layout--narrow-rail">
         <div className="chat-room-main">
@@ -684,13 +640,16 @@ export function ContactsPage() {
                       }
                       type="button"
                       onClick={() => {
-                        setSelectedDirectMessageId(directMessage.id);
-                        setErrorMessage(null);
-                        setNoticeMessage(null);
+                        selectDirectMessage(directMessage.id);
+                        setPageErrorMessage(null);
+                        setPageNoticeMessage(null);
                       }}
                     >
                       <span>{directMessage.counterpart_username}</span>
                       <small>Direct message</small>
+                      {directMessage.unread_count > 0 ? (
+                        <span className="sidebar-badge">{directMessage.unread_count}</span>
+                      ) : null}
                     </button>
                   </li>
                 ))}

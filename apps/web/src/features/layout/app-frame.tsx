@@ -1,9 +1,11 @@
-import { type FormEvent, useState } from "react";
-import { NavLink, Outlet, useLocation } from "react-router-dom";
+import { type FormEvent, useCallback, useState } from "react";
+import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 
+import { useDirectMessages } from "../direct-messages/use-direct-messages";
 import { useRooms } from "../rooms/use-rooms";
 import { useSession } from "../session/use-session";
 import { getApiErrorMessage } from "../../shared/api/client";
+import { useInboxRealtime } from "../../shared/realtime/useInboxRealtime";
 import {
   useWorkspaceContextPanel,
   WorkspaceContextPanelProvider,
@@ -69,6 +71,7 @@ export function AppFrame() {
 }
 
 function AppFrameLayout() {
+  const navigate = useNavigate();
   const location = useLocation();
   const { user, signOut } = useSession();
   const {
@@ -82,11 +85,20 @@ function AppFrameLayout() {
     myRooms,
     noticeMessage,
     publicRooms,
+    incrementUnread: incrementRoomUnread,
+    refreshRooms,
     searchTerm,
     selectRoom,
     selectedRoomId,
     setSearchTerm,
+    totalUnreadCount: totalRoomUnreadCount,
   } = useRooms();
+  const {
+    incrementUnread: incrementDirectMessageUnread,
+    refreshDirectMessages,
+    selectedDirectMessageId,
+    totalUnreadCount: totalDirectMessageUnreadCount,
+  } = useDirectMessages();
   const visiblePublicRooms = publicRooms.filter((room) => !room.is_banned);
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [newRoomName, setNewRoomName] = useState("");
@@ -96,6 +108,42 @@ function AppFrameLayout() {
   const [isSubmittingRoom, setIsSubmittingRoom] = useState(false);
   const [joiningRoomId, setJoiningRoomId] = useState<string | null>(null);
   const [acceptingInvitationId, setAcceptingInvitationId] = useState<string | null>(null);
+
+  const handleUnreadEvent = useCallback(
+    (conversationId: string) => {
+      const isActiveRoom =
+        location.pathname.startsWith("/app/chats") && selectedRoomId === conversationId;
+      const isActiveDirectMessage =
+        location.pathname.startsWith("/app/contacts") &&
+        selectedDirectMessageId === conversationId;
+
+      if (!isActiveRoom) {
+        incrementRoomUnread(conversationId);
+      }
+
+      if (!isActiveDirectMessage) {
+        incrementDirectMessageUnread(conversationId);
+      }
+    },
+    [
+      incrementDirectMessageUnread,
+      incrementRoomUnread,
+      location.pathname,
+      selectedDirectMessageId,
+      selectedRoomId,
+    ],
+  );
+
+  const handleInboxConnected = useCallback(() => {
+    void refreshRooms();
+    void refreshDirectMessages();
+  }, [refreshDirectMessages, refreshRooms]);
+
+  useInboxRealtime({
+    enabled: Boolean(user),
+    onUnread: handleUnreadEvent,
+    onConnected: handleInboxConnected,
+  });
 
   async function handleCreateRoom(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -145,6 +193,11 @@ function AppFrameLayout() {
     }
   }
 
+  function navigateToRoom(roomId: string) {
+    selectRoom(roomId);
+    navigate("/app/chats");
+  }
+
   return (
     <div className="workspace-page">
       <header className="topbar">
@@ -164,6 +217,12 @@ function AppFrameLayout() {
               className={({ isActive }) => (isActive ? "topbar-link is-active" : "topbar-link")}
             >
               {item.label}
+              {item.to === "/app/chats" && totalRoomUnreadCount > 0 ? (
+                <span className="sidebar-badge">{totalRoomUnreadCount}</span>
+              ) : null}
+              {item.to === "/app/contacts" && totalDirectMessageUnreadCount > 0 ? (
+                <span className="sidebar-badge">{totalDirectMessageUnreadCount}</span>
+              ) : null}
             </NavLink>
           ))}
         </nav>
@@ -277,10 +336,13 @@ function AppFrameLayout() {
                       className={
                         selectedRoomId === room.id ? "sidebar-room-button is-active" : "sidebar-room-button"
                       }
-                      onClick={() => selectRoom(room.id)}
+                      onClick={() => navigateToRoom(room.id)}
                     >
                       <span>#{room.name}</span>
                       <small>{room.visibility} | {room.member_count}</small>
+                      {room.unread_count > 0 ? (
+                        <span className="sidebar-badge">{room.unread_count}</span>
+                      ) : null}
                     </button>
                   </li>
                 ))}
@@ -306,16 +368,19 @@ function AppFrameLayout() {
                       className={
                         selectedRoomId === room.id ? "sidebar-room-button is-active" : "sidebar-room-button"
                       }
-                      onClick={() => selectRoom(room.id)}
+                      onClick={() => navigateToRoom(room.id)}
                     >
                       <span>#{room.name}</span>
                       <small>{room.member_count} members</small>
+                      {room.unread_count > 0 ? (
+                        <span className="sidebar-badge">{room.unread_count}</span>
+                      ) : null}
                     </button>
                     {room.is_member ? (
                       <button
                         className="ghost-button sidebar-action-button"
                         type="button"
-                        onClick={() => selectRoom(room.id)}
+                        onClick={() => navigateToRoom(room.id)}
                       >
                         Open
                       </button>
@@ -351,7 +416,7 @@ function AppFrameLayout() {
                     <button
                       type="button"
                       className="sidebar-room-button"
-                      onClick={() => selectRoom(invitation.room_conversation_id)}
+                      onClick={() => navigateToRoom(invitation.room_conversation_id)}
                     >
                       <span>#{invitation.room_name}</span>
                       <small>{invitation.inviter_username ?? "Unknown inviter"}</small>
