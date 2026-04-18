@@ -115,6 +115,13 @@ beforeEach(() => {
       });
     }
 
+    if (url.endsWith("/api/dms/mine")) {
+      return new Response(JSON.stringify({ direct_messages: [] }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
     if (url.endsWith("/api/rooms/room-engineering/members")) {
       return new Response(
         JSON.stringify({
@@ -684,6 +691,111 @@ describe("App routes", () => {
       expect(screen.queryByRole("button", { name: "Remove" })).not.toBeInTheDocument();
       expect(screen.getByText("By Preview User")).toBeInTheDocument();
       expect(screen.getByText("Removed by a room admin.")).toBeInTheDocument();
+    });
+  });
+
+  it("opens a direct message from the contacts page", async () => {
+    let directMessages = [
+      {
+        id: "dm-preview",
+        counterpart_user_id: "user-2",
+        counterpart_username: "existing.friend",
+        counterpart_email: "friend@example.com",
+        status: "active",
+        created_at: "2026-04-18T09:00:00Z",
+        is_initiator: false,
+        can_message: true,
+      },
+    ];
+
+    fetchMock.mockImplementation(async (input, init) => {
+      const url = typeof input === "string" ? input : input.toString();
+
+      if (url.endsWith("/api/auth/me")) {
+        return new Response(
+          JSON.stringify({
+            user: {
+              id: "user-1",
+              username: "Preview User",
+              email: "preview@agentic.chat",
+            },
+          }),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          },
+        );
+      }
+
+      if (url.includes("/api/rooms/mine")) {
+        return new Response(JSON.stringify({ rooms: [] }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      if (url.includes("/api/rooms/public")) {
+        return new Response(JSON.stringify({ rooms: [] }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      if (url.endsWith("/api/rooms/invitations/mine")) {
+        return new Response(JSON.stringify({ invitations: [] }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      if (url.endsWith("/api/dms/mine")) {
+        return new Response(JSON.stringify({ direct_messages: directMessages }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      if (url.endsWith("/api/dms") && init?.method === "POST") {
+        const openedDirectMessage = {
+          id: "dm-new",
+          counterpart_user_id: "user-3",
+          counterpart_username: "new.friend",
+          counterpart_email: "new.friend@example.com",
+          status: "active",
+          created_at: "2026-04-18T10:00:00Z",
+          is_initiator: true,
+          can_message: true,
+        };
+        directMessages = [...directMessages, openedDirectMessage];
+
+        return new Response(JSON.stringify(openedDirectMessage), {
+          status: 201,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      return new Response(JSON.stringify({ detail: "Unhandled request in test." }), {
+        status: 500,
+        headers: { "Content-Type": "application/json" },
+      });
+    });
+
+    renderRoutes(["/app/contacts"]);
+
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { name: "One-to-one conversations" })).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: /existing\.friend/i })).toBeInTheDocument();
+    });
+
+    fireEvent.change(screen.getByLabelText("Username"), {
+      target: { value: "new.friend" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Open direct message" }));
+
+    await waitFor(() => {
+      expect(screen.getByText("Direct message ready with new.friend.")).toBeInTheDocument();
+      expect(screen.getByRole("heading", { name: "new.friend" })).toBeInTheDocument();
+      expect(screen.getAllByText("new.friend@example.com").length).toBeGreaterThan(0);
     });
   });
 

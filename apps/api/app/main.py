@@ -2,6 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.routes.auth import router as auth_router
+from app.api.routes.dms import router as dms_router
 from app.api.routes.health import router as health_router
 from app.api.routes.rooms import router as rooms_router
 from app.core.config import get_settings
@@ -25,6 +26,10 @@ openapi_tags = [
     {
         "name": "rooms",
         "description": "Room creation, catalog discovery, membership, and invitations.",
+    },
+    {
+        "name": "direct-messages",
+        "description": "One-to-one direct message discovery and conversation bootstrap.",
     },
 ]
 
@@ -52,6 +57,7 @@ app.add_middleware(
 )
 
 app.include_router(auth_router)
+app.include_router(dms_router)
 app.include_router(health_router)
 app.include_router(rooms_router)
 
