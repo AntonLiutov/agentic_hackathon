@@ -3,21 +3,78 @@ from __future__ import annotations
 from uuid import UUID
 
 from fastapi import APIRouter, Body, Depends, Query, Request, status
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.dependencies import get_db_session, get_realtime_manager, get_settings_from_request
+from app.api.dependencies import (
+    get_db_session,
+    get_realtime_manager,
+    get_settings_from_request,
+)
 from app.api.schemas.messages import (
     ConversationMessageListResponse,
     ConversationMessageResponse,
+    ConversationReadResponse,
     CreateMessageRequest,
     EditMessageRequest,
 )
 from app.auth.service import get_auth_context
 from app.core.config import Settings
-from app.messages.service import create_message, delete_message, edit_message, list_recent_messages
+from app.db.models.identity import User
+from app.messages.service import (
+    create_message,
+    delete_message,
+    edit_message,
+    get_message,
+    list_conversation_member_ids,
+    list_recent_messages,
+    mark_conversation_read,
+)
 from app.realtime.manager import RealtimeConnectionManager
 
 router = APIRouter(tags=["messages"])
+
+
+async def _build_broadcast_messages_by_user_id(
+    db: AsyncSession,
+    *,
+    realtime_manager: RealtimeConnectionManager,
+    conversation_id: UUID,
+    message_id: int,
+    actor: User,
+    actor_message: ConversationMessageResponse,
+) -> dict[UUID, ConversationMessageResponse]:
+    connected_user_ids = await realtime_manager.get_connected_conversation_user_ids(conversation_id)
+
+    if not connected_user_ids:
+        return {}
+
+    messages_by_user_id: dict[UUID, ConversationMessageResponse] = {}
+
+    for user_id in connected_user_ids:
+        if user_id == actor.id:
+            messages_by_user_id[user_id] = actor_message
+            continue
+
+        target_user = (
+            await db.execute(
+                select(User).where(
+                    User.id == user_id,
+                    User.deleted_at.is_(None),
+                )
+            )
+        ).scalars().first()
+
+        if target_user is None:
+            continue
+
+        messages_by_user_id[user_id] = await get_message(
+            db,
+            user=target_user,
+            message_id=message_id,
+        )
+
+    return messages_by_user_id
 
 
 @router.get(
@@ -55,6 +112,35 @@ async def get_conversation_messages(
 
 
 @router.post(
+    "/api/conversations/{conversation_id}/read",
+    response_model=ConversationReadResponse,
+    summary="Mark a conversation as read",
+    description=(
+        "Clears unread state for the current user by advancing the conversation read marker "
+        "to the latest persisted sequence number."
+    ),
+)
+async def post_conversation_read(
+    conversation_id: UUID,
+    request: Request,
+    db: AsyncSession = Depends(get_db_session),
+    settings: Settings = Depends(get_settings_from_request),
+) -> ConversationReadResponse:
+    auth_context = await get_auth_context(
+        db,
+        settings=settings,
+        session_token=request.cookies.get(settings.session_cookie_name),
+        touch_session=False,
+        required=True,
+    )
+    return await mark_conversation_read(
+        db,
+        user=auth_context.user,
+        conversation_id=conversation_id,
+    )
+
+
+@router.post(
     "/api/conversations/{conversation_id}/messages",
     response_model=ConversationMessageResponse,
     status_code=status.HTTP_201_CREATED,
@@ -85,10 +171,28 @@ async def post_conversation_message(
         conversation_id=conversation_id,
         payload=payload,
     )
+    messages_by_user_id = await _build_broadcast_messages_by_user_id(
+        db,
+        realtime_manager=realtime_manager,
+        conversation_id=conversation_id,
+        message_id=message.id,
+        actor=auth_context.user,
+        actor_message=message,
+    )
     await realtime_manager.broadcast_message_event(
         conversation_id=conversation_id,
         event_type="message.created",
-        message=message,
+        messages_by_user_id=messages_by_user_id,
+        sequence_head=message.sequence_number,
+    )
+    recipient_user_ids = [
+        user_id
+        for user_id in await list_conversation_member_ids(db, conversation_id=conversation_id)
+        if user_id != auth_context.user.id
+    ]
+    await realtime_manager.broadcast_inbox_unread_event(
+        user_ids=recipient_user_ids,
+        conversation_id=conversation_id,
         sequence_head=message.sequence_number,
     )
     return message
@@ -121,10 +225,18 @@ async def patch_message(
         message_id=message_id,
         payload=payload,
     )
+    messages_by_user_id = await _build_broadcast_messages_by_user_id(
+        db,
+        realtime_manager=realtime_manager,
+        conversation_id=message.conversation_id,
+        message_id=message.id,
+        actor=auth_context.user,
+        actor_message=message,
+    )
     await realtime_manager.broadcast_message_event(
         conversation_id=message.conversation_id,
         event_type="message.updated",
-        message=message,
+        messages_by_user_id=messages_by_user_id,
     )
     return message
 
@@ -157,9 +269,17 @@ async def remove_message(
         user=auth_context.user,
         message_id=message_id,
     )
+    messages_by_user_id = await _build_broadcast_messages_by_user_id(
+        db,
+        realtime_manager=realtime_manager,
+        conversation_id=message.conversation_id,
+        message_id=message.id,
+        actor=auth_context.user,
+        actor_message=message,
+    )
     await realtime_manager.broadcast_message_event(
         conversation_id=message.conversation_id,
         event_type="message.deleted",
-        message=message,
+        messages_by_user_id=messages_by_user_id,
     )
     return message

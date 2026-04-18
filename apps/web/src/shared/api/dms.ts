@@ -8,6 +8,7 @@ export type DirectMessage = {
   created_at: string;
   is_initiator: boolean;
   can_message: boolean;
+  unread_count: number;
 };
 
 export type DirectMessageListResponse = {

@@ -9,6 +9,7 @@ import {
 } from "react";
 
 import { useRooms } from "../../features/rooms/use-rooms";
+import { useSession } from "../../features/session/use-session";
 import { ApiError, getApiErrorMessage } from "../../shared/api/client";
 import {
   messagesApi,
@@ -51,7 +52,15 @@ function upsertConversationMessage(
 }
 
 export function ChatsPage() {
-  const { inviteToRoom, joinRoom, leaveRoom, refreshRooms, selectedRoom } = useRooms();
+  const { user } = useSession();
+  const {
+    clearUnread,
+    inviteToRoom,
+    joinRoom,
+    leaveRoom,
+    refreshRooms,
+    selectedRoom,
+  } = useRooms();
   const [inviteUsername, setInviteUsername] = useState("");
   const [inviteMessage, setInviteMessage] = useState("");
   const [members, setMembers] = useState<RoomMember[]>([]);
@@ -120,7 +129,7 @@ export function ChatsPage() {
       container.scrollTop = container.scrollHeight;
       shouldAutoScrollRef.current = false;
     }
-  }, [messages]);
+  }, [isLoadingMessages, messages]);
 
   useEffect(() => {
     let isCancelled = false;
@@ -198,7 +207,9 @@ export function ChatsPage() {
       shouldAutoScrollRef.current = true;
 
       try {
-        const response = await loadLatestMessages(activeRoomId);
+        await loadLatestMessages(activeRoomId);
+        await messagesApi.markRead(activeRoomId);
+        clearUnread(activeRoomId);
 
         if (isCancelled) {
           return;
@@ -227,7 +238,7 @@ export function ChatsPage() {
     return () => {
       isCancelled = true;
     };
-  }, [loadLatestMessages, selectedRoom?.id, selectedRoom?.is_member]);
+  }, [clearUnread, loadLatestMessages, selectedRoom?.id, selectedRoom?.is_member]);
 
   async function loadOlderMessages() {
     if (!selectedRoom || !nextBeforeSequence || isLoadingOlderMessages) {
@@ -483,8 +494,13 @@ export function ChatsPage() {
         setSequenceHead((currentSequenceHead) =>
           Math.max(currentSequenceHead, liveSequenceHead ?? message.sequence_number),
         );
+        if (message.author_user_id && message.author_user_id !== user?.id && selectedRoom?.id) {
+          void messagesApi.markRead(selectedRoom.id).then(() => {
+            clearUnread(selectedRoom.id);
+          });
+        }
       },
-      [loadLatestMessages, selectedRoom?.id],
+      [clearUnread, loadLatestMessages, selectedRoom?.id, user?.id],
     ),
     onMessageUpdated: useCallback((message) => {
       setMessages((currentMessages) => {

@@ -50,6 +50,12 @@ class ConversationMessageListResponse(BaseModel):
     messages: list[ConversationMessageResponse]
 
 
+class ConversationReadResponse(BaseModel):
+    conversation_id: UUID
+    last_read_sequence_number: int
+    unread_count: int
+
+
 class CreateMessageRequest(BaseModel):
     model_config = ConfigDict(
         json_schema_extra={

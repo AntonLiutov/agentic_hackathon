@@ -1,6 +1,7 @@
 import {
   type PropsWithChildren,
   createContext,
+  useCallback,
   useEffect,
   useMemo,
   useState,
@@ -26,6 +27,7 @@ type RoomsContextValue = {
   isLoading: boolean;
   errorMessage: string | null;
   noticeMessage: string | null;
+  totalUnreadCount: number;
   setSearchTerm: (value: string) => void;
   selectRoom: (roomId: string | null) => void;
   refreshRooms: () => Promise<void>;
@@ -34,6 +36,9 @@ type RoomsContextValue = {
   leaveRoom: (roomId: string) => Promise<void>;
   inviteToRoom: (roomId: string, payload: CreateInvitationPayload) => Promise<void>;
   acceptInvitation: (invitationId: string) => Promise<void>;
+  incrementUnread: (conversationId: string) => void;
+  clearUnread: (conversationId: string) => void;
+  upsertRoom: (room: RoomSummary) => void;
   clearMessages: () => void;
 };
 
@@ -41,6 +46,13 @@ export const RoomsContext = createContext<RoomsContextValue | null>(null);
 
 function sortRooms(rooms: RoomSummary[]) {
   return [...rooms].sort((left, right) => left.name.localeCompare(right.name));
+}
+
+function normalizeRoom(room: RoomSummary): RoomSummary {
+  return {
+    ...room,
+    unread_count: room.unread_count ?? 0,
+  };
 }
 
 export function RoomsProvider({ children }: PropsWithChildren) {
@@ -76,8 +88,8 @@ export function RoomsProvider({ children }: PropsWithChildren) {
         roomsApi.listInvitations(),
       ]);
 
-      setMyRooms(sortRooms(mineResponse.rooms));
-      setPublicRooms(sortRooms(publicResponse.rooms));
+      setMyRooms(sortRooms(mineResponse.rooms.map(normalizeRoom)));
+      setPublicRooms(sortRooms(publicResponse.rooms.map(normalizeRoom)));
       setInvitations(invitationResponse.invitations);
       setSelectedRoomId((currentSelection) => {
         if (
@@ -119,6 +131,87 @@ export function RoomsProvider({ children }: PropsWithChildren) {
     return roomPool.find((room) => room.id === selectedRoomId) ?? null;
   }, [myRooms, publicRooms, selectedRoomId]);
 
+  const totalUnreadCount = useMemo(
+    () =>
+      myRooms.reduce((totalUnread, room) => totalUnread + room.unread_count, 0),
+    [myRooms],
+  );
+
+  const selectRoom = useCallback((roomId: string | null) => {
+    setSelectedRoomId(roomId);
+    setNoticeMessage(null);
+    setErrorMessage(null);
+  }, []);
+
+  const incrementUnread = useCallback((conversationId: string) => {
+    setMyRooms((currentRooms) =>
+      currentRooms.map((room) =>
+        room.id === conversationId
+          ? {
+              ...room,
+              unread_count: room.unread_count + 1,
+            }
+          : room,
+      ),
+    );
+    setPublicRooms((currentRooms) =>
+      currentRooms.map((room) =>
+        room.id === conversationId
+          ? {
+              ...room,
+              unread_count: room.unread_count + 1,
+            }
+          : room,
+      ),
+    );
+  }, []);
+
+  const clearUnread = useCallback((conversationId: string) => {
+    setMyRooms((currentRooms) =>
+      currentRooms.map((room) =>
+        room.id === conversationId
+          ? {
+              ...room,
+              unread_count: 0,
+            }
+          : room,
+      ),
+    );
+    setPublicRooms((currentRooms) =>
+      currentRooms.map((room) =>
+        room.id === conversationId
+          ? {
+              ...room,
+              unread_count: 0,
+            }
+          : room,
+      ),
+    );
+  }, []);
+
+  const upsertRoom = useCallback((room: RoomSummary) => {
+    const normalizedRoom = normalizeRoom(room);
+
+    if (normalizedRoom.is_member) {
+      setMyRooms((currentRooms) => {
+        const nextRooms = currentRooms.filter((item) => item.id !== normalizedRoom.id);
+        return sortRooms([...nextRooms, normalizedRoom]);
+      });
+    }
+
+    if (normalizedRoom.visibility === "public") {
+      setPublicRooms((currentRooms) => {
+        const nextRooms = currentRooms.filter((item) => item.id !== normalizedRoom.id);
+        return sortRooms([...nextRooms, normalizedRoom]);
+      });
+    }
+  }, []);
+
+  const clearMessages = useCallback(() => {
+    setErrorMessage(null);
+    setNoticeMessage(null);
+  }, []);
+
   const value = useMemo<RoomsContextValue>(
     () => ({
       myRooms,
@@ -130,19 +223,16 @@ export function RoomsProvider({ children }: PropsWithChildren) {
       isLoading,
       errorMessage,
       noticeMessage,
+      totalUnreadCount,
       setSearchTerm,
-      selectRoom: (roomId) => {
-        setSelectedRoomId(roomId);
-        setNoticeMessage(null);
-        setErrorMessage(null);
-      },
+      selectRoom,
       refreshRooms: async () => {
         await loadRooms(searchTerm);
       },
       createRoom: async (payload) => {
         setErrorMessage(null);
         setNoticeMessage(null);
-        const room = await roomsApi.create(payload);
+        const room = normalizeRoom(await roomsApi.create(payload));
         setMyRooms((currentRooms) => sortRooms([...currentRooms, room]));
         if (room.visibility === "public") {
           setPublicRooms((currentRooms) => {
@@ -160,7 +250,7 @@ export function RoomsProvider({ children }: PropsWithChildren) {
       joinRoom: async (roomId) => {
         setErrorMessage(null);
         setNoticeMessage(null);
-        const joinedRoom = await roomsApi.join(roomId);
+        const joinedRoom = normalizeRoom(await roomsApi.join(roomId));
         setMyRooms((currentRooms) => {
           const nextRooms = currentRooms.filter((room) => room.id !== joinedRoom.id);
           return sortRooms([...nextRooms, joinedRoom]);
@@ -214,7 +304,7 @@ export function RoomsProvider({ children }: PropsWithChildren) {
       acceptInvitation: async (invitationId) => {
         setErrorMessage(null);
         setNoticeMessage(null);
-        const room = await roomsApi.acceptInvitation(invitationId);
+        const room = normalizeRoom(await roomsApi.acceptInvitation(invitationId));
         setInvitations((currentInvitations) =>
           currentInvitations.filter((invitation) => invitation.id !== invitationId),
         );
@@ -225,21 +315,27 @@ export function RoomsProvider({ children }: PropsWithChildren) {
         setSelectedRoomId(room.id);
         setNoticeMessage(`Invitation accepted. You joined #${room.name}.`);
       },
-      clearMessages: () => {
-        setErrorMessage(null);
-        setNoticeMessage(null);
-      },
+      incrementUnread,
+      clearUnread,
+      upsertRoom,
+      clearMessages,
     }),
     [
+      clearMessages,
+      clearUnread,
       errorMessage,
+      incrementUnread,
       invitations,
       isLoading,
       myRooms,
       noticeMessage,
       publicRooms,
       searchTerm,
+      selectRoom,
       selectedRoom,
       selectedRoomId,
+      totalUnreadCount,
+      upsertRoom,
     ],
   );
 

@@ -4,7 +4,7 @@ Classic web chat platform built for the AI Herders Jam requirements.
 
 ## Current Status
 
-Sprint 1 is complete and Sprint 2 is implemented through realtime delivery. The repository now includes:
+Sprint 1 is complete and Sprint 2 is implemented through unread indicators. The repository now includes:
 
 - planning and architecture docs
 - backend and frontend application skeletons
@@ -31,6 +31,10 @@ Sprint 1 is complete and Sprint 2 is implemented through realtime delivery. The 
 - authenticated WebSocket delivery for the active room or direct message
 - live message create, edit, and delete updates across connected clients
 - reconnect-aware realtime status in the room and DM workspaces
+- unread badges for rooms and direct messages
+- read-state clearing when a room or DM is opened
+- sidebar navigation from non-chat routes into the correct chat workspace
+- privacy-safe conversation lists that no longer expose other users' email addresses
 
 ## Repository Structure
 
@@ -130,10 +134,14 @@ Basic checks after startup:
 20. Open the same shared room in two browsers or one browser plus a private window, send a new message from one side, and confirm it appears on the other side without refresh.
 21. Edit or delete that same message and confirm the other client updates live as well.
 22. Repeat the same live update check in a direct message conversation.
-23. Refresh one of the conversation tabs and confirm the workspace reconnects and returns to `live updates`.
-24. Use the workspace sign-out action and confirm protected routes redirect back to `/signin`.
-25. Open `http://localhost:8000/healthz` and confirm the API returns `status: ok`.
-26. Open `http://localhost:3000/` and confirm the frontend responds.
+23. While one user is reading a room or DM, send a message from the other side and confirm the new message does not show `Edit` or `Delete` buttons for the non-author.
+24. Leave one room or DM inactive, send a new message into it from another client, and confirm the corresponding sidebar unread badge increments.
+25. Open that unread room or DM and confirm the unread badge clears after the conversation loads.
+26. From `/app/contacts`, click a room in the left sidebar and confirm the app navigates into `/app/chats` with that room selected.
+27. Refresh one of the conversation tabs and confirm the workspace reconnects and returns to `live updates`.
+28. Use the workspace sign-out action and confirm protected routes redirect back to `/signin`.
+29. Open `http://localhost:8000/healthz` and confirm the API returns `status: ok`.
+30. Open `http://localhost:3000/` and confirm the frontend responds.
 
 Stop the stack:
 
@@ -158,5 +166,6 @@ This repository currently targets:
 - `SP2-04 Message Lifecycle`
 - `SP2-05 Message History and Infinite Scroll`
 - `SP2-06 Realtime Delivery`
+- `SP2-07 Unread Indicators`
 
-The next implementation step is `SP2-07 Unread Indicators`.
+The next implementation step is `SP2-08 Presence`.

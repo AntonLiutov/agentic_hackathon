@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.schemas.messages import (
     ConversationMessageListResponse,
     ConversationMessageResponse,
+    ConversationReadResponse,
     CreateMessageRequest,
     EditMessageRequest,
     MessageReplyReferenceResponse,
@@ -18,7 +19,7 @@ from app.api.schemas.messages import (
 from app.db.models.conversation import Conversation, ConversationMember
 from app.db.models.enums import ConversationType
 from app.db.models.identity import User
-from app.db.models.message import Message
+from app.db.models.message import ConversationRead, Message
 from app.rooms.service import get_room_access_context
 
 
@@ -258,6 +259,94 @@ async def _next_sequence_number(
     return int(next_sequence)
 
 
+async def _set_conversation_read_state(
+    db: AsyncSession,
+    *,
+    conversation_id: UUID,
+    user_id: UUID,
+    last_read_sequence_number: int,
+) -> ConversationRead:
+    read_state = await db.get(
+        ConversationRead,
+        {
+            "conversation_id": conversation_id,
+            "user_id": user_id,
+        },
+    )
+
+    if read_state is None:
+        read_state = ConversationRead(
+            conversation_id=conversation_id,
+            user_id=user_id,
+        )
+        db.add(read_state)
+
+    normalized_sequence = max(
+        int(read_state.last_read_sequence_number or 0),
+        int(last_read_sequence_number),
+    )
+    read_state.last_read_sequence_number = normalized_sequence
+    read_state.last_opened_at = _utc_now()
+
+    if normalized_sequence <= 0:
+        read_state.last_read_message_id = None
+        return read_state
+
+    last_message_id = (
+        await db.execute(
+            select(Message.id).where(
+                Message.conversation_id == conversation_id,
+                Message.sequence_number == normalized_sequence,
+            )
+        )
+    ).scalar_one_or_none()
+    read_state.last_read_message_id = last_message_id
+    return read_state
+
+
+async def mark_conversation_read(
+    db: AsyncSession,
+    *,
+    user: User,
+    conversation_id: UUID,
+) -> ConversationReadResponse:
+    access_context = await get_conversation_access_context(
+        db,
+        conversation_id=conversation_id,
+        user=user,
+    )
+    sequence_head = int(access_context.conversation.message_sequence_head)
+    read_state = await _set_conversation_read_state(
+        db,
+        conversation_id=conversation_id,
+        user_id=user.id,
+        last_read_sequence_number=sequence_head,
+    )
+    await db.commit()
+
+    return ConversationReadResponse(
+        conversation_id=conversation_id,
+        last_read_sequence_number=int(read_state.last_read_sequence_number),
+        unread_count=max(
+            0,
+            sequence_head - int(read_state.last_read_sequence_number),
+        ),
+    )
+
+
+async def list_conversation_member_ids(
+    db: AsyncSession,
+    *,
+    conversation_id: UUID,
+) -> list[UUID]:
+    rows = await db.execute(
+        select(ConversationMember.user_id).where(
+            ConversationMember.conversation_id == conversation_id,
+        )
+    )
+    return list(rows.scalars().all())
+
+
 async def create_message(
     db: AsyncSession,
     *,
@@ -287,6 +376,12 @@ async def create_message(
         reply_to_message_id=payload.reply_to_message_id,
     )
     db.add(message)
+    await _set_conversation_read_state(
+        db,
+        conversation_id=conversation_id,
+        user_id=user.id,
+        last_read_sequence_number=sequence_number,
+    )
     await db.commit()
 
     access_context.conversation.message_sequence_head = sequence_number

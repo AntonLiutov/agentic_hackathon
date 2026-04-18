@@ -35,6 +35,12 @@ export type ConversationMessageListResponse = {
   messages: ConversationMessage[];
 };
 
+export type ConversationReadResponse = {
+  conversation_id: string;
+  last_read_sequence_number: number;
+  unread_count: number;
+};
+
 export type CreateMessagePayload = {
   body_text: string;
   reply_to_message_id?: number;
@@ -71,6 +77,11 @@ export const messagesApi = {
   delete(messageId: number) {
     return apiRequest<ConversationMessage>(`/api/messages/${messageId}`, {
       method: "DELETE",
+    });
+  },
+  markRead(conversationId: string) {
+    return apiRequest<ConversationReadResponse>(`/api/conversations/${conversationId}/read`, {
+      method: "POST",
     });
   },
 };

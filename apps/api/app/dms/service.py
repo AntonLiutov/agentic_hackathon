@@ -5,7 +5,7 @@ from datetime import datetime
 from uuid import UUID
 
 from fastapi import HTTPException, status
-from sqlalchemy import and_, or_, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.schemas.dms import DirectMessageSummaryResponse
@@ -13,6 +13,7 @@ from app.auth.security import normalize_username
 from app.db.models.conversation import Conversation, ConversationMember, DmMetadata
 from app.db.models.enums import ConversationType, DmStatus
 from app.db.models.identity import User
+from app.db.models.message import ConversationRead
 
 
 @dataclass
@@ -21,6 +22,8 @@ class _DmProjection:
     created_at: datetime
     status: DmStatus
     initiated_by_user_id: UUID | None
+    message_sequence_head: int
+    last_read_sequence_number: int
     user_one_id: UUID
     user_one_username: str
     user_two_id: UUID
@@ -55,6 +58,10 @@ def _project_dm_summary(
         created_at=projection.created_at,
         is_initiator=projection.initiated_by_user_id == current_user_id,
         can_message=projection.status == DmStatus.ACTIVE,
+        unread_count=max(
+            0,
+            int(projection.message_sequence_head) - int(projection.last_read_sequence_number),
+        ),
     )
 
 
@@ -68,6 +75,8 @@ def _dm_projection_query(*, current_user_id: UUID):
             Conversation.created_at,
             DmMetadata.status,
             DmMetadata.initiated_by_user_id,
+            Conversation.message_sequence_head,
+            func.coalesce(ConversationRead.last_read_sequence_number, 0),
             DmMetadata.user_one_id,
             user_one.c.username,
             DmMetadata.user_two_id,
@@ -79,6 +88,13 @@ def _dm_projection_query(*, current_user_id: UUID):
             and_(
                 ConversationMember.conversation_id == Conversation.id,
                 ConversationMember.user_id == current_user_id,
+            ),
+        )
+        .outerjoin(
+            ConversationRead,
+            and_(
+                ConversationRead.conversation_id == Conversation.id,
+                ConversationRead.user_id == current_user_id,
             ),
         )
         .join(user_one, user_one.c.id == DmMetadata.user_one_id)
@@ -108,6 +124,8 @@ async def list_direct_messages(
                 created_at=created_at,
                 status=dm_status,
                 initiated_by_user_id=initiated_by_user_id,
+                message_sequence_head=message_sequence_head,
+                last_read_sequence_number=last_read_sequence_number,
                 user_one_id=user_one_id,
                 user_one_username=user_one_username,
                 user_two_id=user_two_id,
@@ -120,6 +138,8 @@ async def list_direct_messages(
             created_at,
             dm_status,
             initiated_by_user_id,
+            message_sequence_head,
+            last_read_sequence_number,
             user_one_id,
             user_one_username,
             user_two_id,
@@ -151,10 +171,12 @@ async def get_direct_message_summary(
             created_at=row[1],
             status=row[2],
             initiated_by_user_id=row[3],
-            user_one_id=row[4],
-            user_one_username=row[5],
-            user_two_id=row[6],
-            user_two_username=row[7],
+            message_sequence_head=row[4],
+            last_read_sequence_number=row[5],
+            user_one_id=row[6],
+            user_one_username=row[7],
+            user_two_id=row[8],
+            user_two_username=row[9],
         ),
         current_user_id=user.id,
     )

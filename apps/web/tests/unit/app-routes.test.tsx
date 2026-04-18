@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -7,7 +7,42 @@ import { AppRouter } from "../../src/app/router";
 
 const fetchMock = vi.fn<typeof fetch>();
 
+class MockWebSocket {
+  static instances: MockWebSocket[] = [];
+
+  onopen: ((event: Event) => void) | null = null;
+  onmessage: ((event: MessageEvent<string>) => void) | null = null;
+  onclose: ((event: CloseEvent) => void) | null = null;
+  onerror: ((event: Event) => void) | null = null;
+
+  constructor(public readonly url: string) {
+    MockWebSocket.instances.push(this);
+    queueMicrotask(() => {
+      this.onopen?.(new Event("open"));
+    });
+  }
+
+  send(_data: string) {}
+
+  close() {
+    this.onclose?.(new CloseEvent("close"));
+  }
+
+  emit(payload: unknown) {
+    this.onmessage?.(
+      new MessageEvent("message", {
+        data: JSON.stringify(payload),
+      }),
+    );
+  }
+
+  static reset() {
+    MockWebSocket.instances = [];
+  }
+}
+
 beforeEach(() => {
+  vi.stubGlobal("WebSocket", MockWebSocket as unknown as typeof WebSocket);
   fetchMock.mockImplementation(async (input, init) => {
     const url = typeof input === "string" ? input : input.toString();
 
@@ -160,6 +195,9 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  cleanup();
+  fetchMock.mockReset();
+  MockWebSocket.reset();
   vi.unstubAllGlobals();
 });
 
@@ -532,6 +570,186 @@ describe("App routes", () => {
       expect(screen.getByRole("heading", { level: 1, name: "#war-room" })).toBeInTheDocument();
     });
   });
+
+  it("navigates to the chat workspace when a room is clicked from contacts", async () => {
+    fetchMock.mockImplementation(async (input, init) => {
+      const url = typeof input === "string" ? input : input.toString();
+
+      if (url.endsWith("/api/auth/me")) {
+        return new Response(
+          JSON.stringify({
+            user: {
+              id: "user-1",
+              username: "Preview User",
+              email: "preview@agentic.chat",
+            },
+          }),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          },
+        );
+      }
+
+      if (url.includes("/api/rooms/mine")) {
+        return new Response(
+          JSON.stringify({
+            rooms: [
+              {
+                id: "room-engineering",
+                name: "engineering-room",
+                description: "Coordination room for the main launch.",
+                visibility: "public",
+                owner_user_id: "user-1",
+                member_count: 4,
+                is_member: true,
+                is_owner: true,
+                is_admin: true,
+                is_banned: false,
+                can_join: false,
+                can_leave: false,
+                can_manage_members: true,
+                joined_at: "2026-04-18T08:00:00Z",
+                unread_count: 2,
+              },
+            ],
+          }),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          },
+        );
+      }
+
+      if (url.includes("/api/rooms/public")) {
+        return new Response(
+          JSON.stringify({
+            rooms: [
+              {
+                id: "room-engineering",
+                name: "engineering-room",
+                description: "Coordination room for the main launch.",
+                visibility: "public",
+                owner_user_id: "user-1",
+                member_count: 4,
+                is_member: true,
+                is_owner: true,
+                is_admin: true,
+                is_banned: false,
+                can_join: false,
+                can_leave: false,
+                can_manage_members: true,
+                joined_at: "2026-04-18T08:00:00Z",
+                unread_count: 2,
+              },
+            ],
+          }),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          },
+        );
+      }
+
+      if (url.endsWith("/api/rooms/invitations/mine")) {
+        return new Response(JSON.stringify({ invitations: [] }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      if (url.endsWith("/api/dms/mine")) {
+        return new Response(JSON.stringify({ direct_messages: [] }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      if (url.endsWith("/api/rooms/room-engineering/members")) {
+        return new Response(
+          JSON.stringify({
+            members: [
+              {
+                id: "user-1",
+                username: "Preview User",
+                joined_at: "2026-04-18T08:00:00Z",
+                is_owner: true,
+                is_admin: true,
+                can_remove: false,
+              },
+            ],
+          }),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          },
+        );
+      }
+
+      if (url.endsWith("/api/rooms/room-engineering/bans")) {
+        return new Response(JSON.stringify({ bans: [] }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      if (url.includes("/api/conversations/room-engineering/messages") && (!init?.method || init.method === "GET")) {
+        return new Response(
+          JSON.stringify({
+            conversation_id: "room-engineering",
+            sequence_head: 2,
+            oldest_loaded_sequence: null,
+            newest_loaded_sequence: null,
+            next_before_sequence: null,
+            has_older: false,
+            messages: [],
+          }),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          },
+        );
+      }
+
+      if (url.endsWith("/api/conversations/room-engineering/read") && init?.method === "POST") {
+        return new Response(
+          JSON.stringify({
+            conversation_id: "room-engineering",
+            last_read_sequence_number: 2,
+            unread_count: 0,
+          }),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          },
+        );
+      }
+
+      return new Response(JSON.stringify({ detail: "Unhandled request in test." }), {
+        status: 500,
+        headers: { "Content-Type": "application/json" },
+      });
+    });
+
+    renderRoutes(["/app/contacts"]);
+
+    await waitFor(() => {
+      expect(
+        screen.getAllByRole("button", { name: /#engineering-room/i }).length,
+      ).toBeGreaterThan(0);
+    });
+
+    const [roomButton] = screen.getAllByRole("button", { name: /#engineering-room/i });
+    expect(roomButton).toHaveTextContent("2");
+
+    fireEvent.click(roomButton);
+
+    await waitFor(() => {
+      expect(
+        screen.getByRole("heading", { level: 1, name: "#engineering-room" }),
+      ).toBeInTheDocument();
+    });
+  }, 15_000);
 
   it("removes a member and shows the room ban state to admins", async () => {
     let members = [

@@ -38,6 +38,7 @@ class RoomSummaryResponse(BaseModel):
     can_leave: bool
     can_manage_members: bool = False
     joined_at: datetime | None = None
+    unread_count: int = 0
 
 
 class RoomListResponse(BaseModel):

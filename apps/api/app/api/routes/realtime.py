@@ -16,7 +16,7 @@ async def conversation_websocket(websocket: WebSocket, conversation_id: UUID) ->
     session_factory = websocket.app.state.database.session_factory
     realtime_manager = websocket.app.state.realtime
 
-    async with session_factory() as db:  # type: AsyncSession
+    async with session_factory() as db:
         auth_context = await get_auth_context(
             db,
             settings=settings,
@@ -45,7 +45,11 @@ async def conversation_websocket(websocket: WebSocket, conversation_id: UUID) ->
             )
             return
 
-    await realtime_manager.connect(conversation_id, websocket)
+    await realtime_manager.connect(
+        conversation_id,
+        auth_context.user.id,
+        websocket,
+    )
     await websocket.send_json(
         {
             "type": "conversation.subscribed",
@@ -62,3 +66,38 @@ async def conversation_websocket(websocket: WebSocket, conversation_id: UUID) ->
                 await websocket.send_json({"type": "pong"})
     except WebSocketDisconnect:
         await realtime_manager.disconnect(conversation_id, websocket)
+
+
+@router.websocket("/ws/inbox")
+async def inbox_websocket(websocket: WebSocket) -> None:
+    settings = websocket.app.state.settings
+    session_factory = websocket.app.state.database.session_factory
+    realtime_manager = websocket.app.state.realtime
+
+    async with session_factory() as db:
+        auth_context = await get_auth_context(
+            db,
+            settings=settings,
+            session_token=websocket.cookies.get(settings.session_cookie_name),
+            touch_session=True,
+            required=False,
+        )
+
+        if auth_context is None:
+            await websocket.close(
+                code=status.WS_1008_POLICY_VIOLATION,
+                reason="Authentication required.",
+            )
+            return
+
+    await realtime_manager.connect_inbox(auth_context.user.id, websocket)
+    await websocket.send_json({"type": "inbox.subscribed"})
+
+    try:
+        while True:
+            payload = await websocket.receive_json()
+
+            if payload.get("type") == "ping":
+                await websocket.send_json({"type": "pong"})
+    except WebSocketDisconnect:
+        await realtime_manager.disconnect_inbox(auth_context.user.id, websocket)
