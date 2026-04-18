@@ -631,7 +631,6 @@ async def list_room_members(
         RoomMemberResponse(
             id=member.id,
             username=member.username,
-            email=member.email,
             joined_at=joined_at,
             is_owner=member.id == room.owner_user_id,
             is_admin=member.id in admin_ids,
@@ -657,7 +656,6 @@ async def list_room_bans(
         select(
             RoomBan,
             User.username,
-            User.email,
             banned_by_user.c.username,
         )
         .join(User, User.id == RoomBan.user_id)
@@ -672,12 +670,11 @@ async def list_room_bans(
             id=ban.id,
             user_id=ban.user_id,
             username=username,
-            email=email,
             banned_at=ban.created_at,
             banned_by_username=banned_by_username,
             reason=ban.reason,
         )
-        for ban, username, email, banned_by_username in rows
+        for ban, username, banned_by_username in rows
     ]
 
 

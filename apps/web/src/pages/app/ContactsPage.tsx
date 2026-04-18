@@ -17,6 +17,7 @@ import {
   type ConversationMessage,
 } from "../../shared/api/messages";
 import { useWorkspaceContextPanel } from "../../features/layout/workspace-context-panel";
+import { useConversationRealtime } from "../../shared/realtime/useConversationRealtime";
 
 function sortDirectMessages(directMessages: DirectMessage[]) {
   return [...directMessages].sort((left, right) =>
@@ -45,6 +46,18 @@ function getReplyPreview(message: ConversationMessage) {
 
 const MESSAGE_PAGE_SIZE = 30;
 
+function upsertConversationMessage(
+  currentMessages: ConversationMessage[],
+  nextMessage: ConversationMessage,
+) {
+  const mergedMessages = [
+    ...currentMessages.filter((message) => message.id !== nextMessage.id),
+    nextMessage,
+  ];
+  mergedMessages.sort((left, right) => left.sequence_number - right.sequence_number);
+  return mergedMessages;
+}
+
 export function ContactsPage() {
   const { setPanelContent } = useWorkspaceContextPanel();
   const [directMessages, setDirectMessages] = useState<DirectMessage[]>([]);
@@ -70,6 +83,15 @@ export function ContactsPage() {
   const pendingScrollRestoreRef = useRef<{ previousHeight: number; previousTop: number } | null>(
     null,
   );
+
+  const loadLatestMessages = useCallback(async (conversationId: string) => {
+    const response = await messagesApi.list(conversationId, MESSAGE_PAGE_SIZE);
+    setMessages(response.messages);
+    setSequenceHead(response.sequence_head);
+    setHasOlderMessages(response.has_older);
+    setNextBeforeSequence(response.next_before_sequence);
+    return response;
+  }, []);
 
   function isNearBottom() {
     const container = messageListRef.current;
@@ -167,16 +189,11 @@ export function ContactsPage() {
       shouldAutoScrollRef.current = true;
 
       try {
-        const response = await messagesApi.list(selectedDirectMessageId, MESSAGE_PAGE_SIZE);
+        await loadLatestMessages(selectedDirectMessageId);
 
         if (isCancelled) {
           return;
         }
-
-        setMessages(response.messages);
-        setSequenceHead(response.sequence_head);
-        setHasOlderMessages(response.has_older);
-        setNextBeforeSequence(response.next_before_sequence);
       } catch (error) {
         if (!isCancelled) {
           setErrorMessage(getApiErrorMessage(error, "Unable to load direct messages right now."));
@@ -193,7 +210,7 @@ export function ContactsPage() {
     return () => {
       isCancelled = true;
     };
-  }, [selectedDirectMessageId]);
+  }, [loadLatestMessages, selectedDirectMessageId]);
 
   async function loadOlderMessages() {
     if (!selectedDirectMessageId || !nextBeforeSequence || isLoadingOlderMessages) {
@@ -289,9 +306,7 @@ export function ContactsPage() {
           body_text: composeText,
         });
         setMessages((currentMessages) =>
-          currentMessages.map((message) =>
-            message.id === updatedMessage.id ? updatedMessage : message,
-          ),
+          upsertConversationMessage(currentMessages, updatedMessage),
         );
         setNoticeMessage("Message updated.");
       } else {
@@ -300,8 +315,12 @@ export function ContactsPage() {
           body_text: composeText,
           reply_to_message_id: replyTarget?.id,
         });
-        setMessages((currentMessages) => [...currentMessages, createdMessage]);
-        setSequenceHead(createdMessage.sequence_number);
+        setMessages((currentMessages) =>
+          upsertConversationMessage(currentMessages, createdMessage),
+        );
+        setSequenceHead((currentSequenceHead) =>
+          Math.max(currentSequenceHead, createdMessage.sequence_number),
+        );
       }
 
       resetComposerState();
@@ -336,9 +355,7 @@ export function ContactsPage() {
     try {
       const deletedMessage = await messagesApi.delete(message.id);
       setMessages((currentMessages) =>
-        currentMessages.map((currentMessage) =>
-          currentMessage.id === deletedMessage.id ? deletedMessage : currentMessage,
-        ),
+        upsertConversationMessage(currentMessages, deletedMessage),
       );
 
       if (editingMessageId === message.id || replyTarget?.id === message.id) {
@@ -356,6 +373,55 @@ export function ContactsPage() {
       directMessages.find((directMessage) => directMessage.id === selectedDirectMessageId) ?? null,
     [directMessages, selectedDirectMessageId],
   );
+
+  const realtime = useConversationRealtime({
+    conversationId: selectedDirectMessageId,
+    enabled: selectedDirectMessageId !== null,
+    onMessageCreated: useCallback(
+      (message, liveSequenceHead) => {
+        shouldAutoScrollRef.current = isNearBottom();
+
+        setMessages((currentMessages) => {
+          const newestLoadedSequence =
+            currentMessages[currentMessages.length - 1]?.sequence_number ?? 0;
+
+          if (
+            newestLoadedSequence > 0 &&
+            message.sequence_number > newestLoadedSequence + 1 &&
+            selectedDirectMessageId
+          ) {
+            shouldAutoScrollRef.current = false;
+            void loadLatestMessages(selectedDirectMessageId);
+            return currentMessages;
+          }
+
+          return upsertConversationMessage(currentMessages, message);
+        });
+        setSequenceHead((currentSequenceHead) =>
+          Math.max(currentSequenceHead, liveSequenceHead ?? message.sequence_number),
+        );
+      },
+      [loadLatestMessages, selectedDirectMessageId],
+    ),
+    onMessageUpdated: useCallback((message) => {
+      setMessages((currentMessages) => {
+        if (!currentMessages.some((currentMessage) => currentMessage.id === message.id)) {
+          return currentMessages;
+        }
+
+        return upsertConversationMessage(currentMessages, message);
+      });
+    }, []),
+    onMessageDeleted: useCallback((message) => {
+      setMessages((currentMessages) => {
+        if (!currentMessages.some((currentMessage) => currentMessage.id === message.id)) {
+          return currentMessages;
+        }
+
+        return upsertConversationMessage(currentMessages, message);
+      });
+    }, []),
+  });
 
   const contactsPanelContent = useMemo<ReactNode>(
     () => (
@@ -412,7 +478,7 @@ export function ContactsPage() {
                 <div>
                   <p className="eyebrow">Conversation</p>
                   <h2>{selectedDirectMessage.counterpart_username}</h2>
-                  <p>{selectedDirectMessage.counterpart_email}</p>
+                  <p>Direct conversation on the shared chat model.</p>
                 </div>
 
                 <div className="room-header-actions">
@@ -421,6 +487,19 @@ export function ContactsPage() {
                     {selectedDirectMessage.status}
                   </span>
                   <span className="status-pill status-pill--neutral">sequence {sequenceHead}</span>
+                  <span
+                    className={
+                      realtime.status === "live"
+                        ? "status-pill status-pill--success"
+                        : "status-pill status-pill--warning"
+                    }
+                  >
+                    {realtime.status === "live"
+                      ? "live updates"
+                      : realtime.status === "reconnecting"
+                        ? "reconnecting"
+                        : "connecting"}
+                  </span>
                 </div>
               </header>
 
@@ -611,7 +690,7 @@ export function ContactsPage() {
                       }}
                     >
                       <span>{directMessage.counterpart_username}</span>
-                      <small>{directMessage.counterpart_email}</small>
+                      <small>Direct message</small>
                     </button>
                   </li>
                 ))}

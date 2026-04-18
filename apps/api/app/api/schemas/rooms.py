@@ -77,7 +77,6 @@ class RoomInvitationListResponse(BaseModel):
 class RoomMemberResponse(BaseModel):
     id: UUID
     username: str
-    email: str
     joined_at: datetime
     is_owner: bool
     is_admin: bool
@@ -92,7 +91,6 @@ class RoomBanResponse(BaseModel):
     id: UUID
     user_id: UUID
     username: str
-    email: str
     banned_at: datetime
     banned_by_username: str | None
     reason: str | None

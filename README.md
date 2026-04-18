@@ -4,7 +4,7 @@ Classic web chat platform built for the AI Herders Jam requirements.
 
 ## Current Status
 
-Sprint 1 is complete and Sprint 2 room work has started. The repository now includes:
+Sprint 1 is complete and Sprint 2 is implemented through realtime delivery. The repository now includes:
 
 - planning and architecture docs
 - backend and frontend application skeletons
@@ -18,6 +18,19 @@ Sprint 1 is complete and Sprint 2 room work has started. The repository now incl
 - public room catalog with search
 - join and leave room flows
 - private-room invitation acceptance
+- room membership enforcement and admin removal-as-ban behavior
+- direct-message conversations on the shared conversation model
+- shared message lifecycle for rooms and DMs:
+  - send
+  - reply
+  - edit
+  - delete
+  - admin delete in rooms
+- cursor-based message history loading with stable prepend behavior
+- incremental older-message loading in room and DM workspaces
+- authenticated WebSocket delivery for the active room or direct message
+- live message create, edit, and delete updates across connected clients
+- reconnect-aware realtime status in the room and DM workspaces
 
 ## Repository Structure
 
@@ -109,9 +122,18 @@ Basic checks after startup:
 12. Join the public room and confirm it appears in `Your Rooms`.
 13. Sign back in as the private-room owner, invite the second user from the private room panel, then accept that invitation from the second account.
 14. Confirm the accepted private room appears in `Your Rooms` but never in the public catalog.
-15. Use the workspace sign-out action and confirm protected routes redirect back to `/signin`.
-16. Open `http://localhost:8000/healthz` and confirm the API returns `status: ok`.
-17. Open `http://localhost:3000/` and confirm the frontend responds.
+15. In a shared room, send a message, reply to it, edit it, and delete it. Confirm the edited indicator and deleted-message state appear correctly.
+16. Remove a member from a room as the room owner/admin and confirm they lose room access.
+17. Open `/app/contacts`, create a direct message by username, and confirm the DM appears in the direct-message list.
+18. Send a message inside the DM, then reply to or edit your own message.
+19. In either a room or DM, use `Load older messages` after there is enough history and confirm older messages prepend without yanking the viewport to the bottom.
+20. Open the same shared room in two browsers or one browser plus a private window, send a new message from one side, and confirm it appears on the other side without refresh.
+21. Edit or delete that same message and confirm the other client updates live as well.
+22. Repeat the same live update check in a direct message conversation.
+23. Refresh one of the conversation tabs and confirm the workspace reconnects and returns to `live updates`.
+24. Use the workspace sign-out action and confirm protected routes redirect back to `/signin`.
+25. Open `http://localhost:8000/healthz` and confirm the API returns `status: ok`.
+26. Open `http://localhost:3000/` and confirm the frontend responds.
 
 Stop the stack:
 
@@ -131,5 +153,10 @@ This repository currently targets:
 - `SP1-06 Persistent Sessions`
 - `SP1-07 Password Management`
 - `SP2-01 Public and Private Rooms`
+- `SP2-02 Conversation Membership Rules`
+- `SP2-03 Direct Messages`
+- `SP2-04 Message Lifecycle`
+- `SP2-05 Message History and Infinite Scroll`
+- `SP2-06 Realtime Delivery`
 
-The next implementation step is `SP2-02 Conversation Membership Rules`.
+The next implementation step is `SP2-07 Unread Indicators`.

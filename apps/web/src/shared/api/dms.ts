@@ -4,7 +4,6 @@ export type DirectMessage = {
   id: string;
   counterpart_user_id: string;
   counterpart_username: string;
-  counterpart_email: string;
   status: "active" | "frozen";
   created_at: string;
   is_initiator: boolean;

@@ -22,7 +22,6 @@ export type RoomSummary = {
 export type RoomMember = {
   id: string;
   username: string;
-  email: string;
   joined_at: string;
   is_owner: boolean;
   is_admin: boolean;
@@ -33,7 +32,6 @@ export type RoomBan = {
   id: string;
   user_id: string;
   username: string;
-  email: string;
   banned_at: string;
   banned_by_username: string | null;
   reason: string | null;

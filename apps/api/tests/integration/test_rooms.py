@@ -294,6 +294,7 @@ def test_room_membership_access_and_admin_removal_rules(auth_client: TestClient)
     assert members[0]["username"] == "owner.membership"
     assert members[0]["is_owner"] is True
     assert members[0]["is_admin"] is True
+    assert "email" not in members[0]
 
     auth_client.post("/api/auth/logout")
     _login_user(auth_client, email="member-one@example.com")
@@ -342,6 +343,7 @@ def test_room_membership_access_and_admin_removal_rules(auth_client: TestClient)
     bans = ban_list_after_removal.json()["bans"]
     assert len(bans) == 1
     assert bans[0]["username"] == "member.one"
+    assert "email" not in bans[0]
 
     auth_client.post("/api/auth/logout")
     _login_user(auth_client, email="member-one@example.com")

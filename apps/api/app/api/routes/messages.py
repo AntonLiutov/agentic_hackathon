@@ -5,7 +5,7 @@ from uuid import UUID
 from fastapi import APIRouter, Body, Depends, Query, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.dependencies import get_db_session, get_settings_from_request
+from app.api.dependencies import get_db_session, get_realtime_manager, get_settings_from_request
 from app.api.schemas.messages import (
     ConversationMessageListResponse,
     ConversationMessageResponse,
@@ -15,6 +15,7 @@ from app.api.schemas.messages import (
 from app.auth.service import get_auth_context
 from app.core.config import Settings
 from app.messages.service import create_message, delete_message, edit_message, list_recent_messages
+from app.realtime.manager import RealtimeConnectionManager
 
 router = APIRouter(tags=["messages"])
 
@@ -68,6 +69,7 @@ async def post_conversation_message(
     request: Request,
     payload: CreateMessageRequest = Body(...),
     db: AsyncSession = Depends(get_db_session),
+    realtime_manager: RealtimeConnectionManager = Depends(get_realtime_manager),
     settings: Settings = Depends(get_settings_from_request),
 ) -> ConversationMessageResponse:
     auth_context = await get_auth_context(
@@ -77,12 +79,19 @@ async def post_conversation_message(
         touch_session=False,
         required=True,
     )
-    return await create_message(
+    message = await create_message(
         db,
         user=auth_context.user,
         conversation_id=conversation_id,
         payload=payload,
     )
+    await realtime_manager.broadcast_message_event(
+        conversation_id=conversation_id,
+        event_type="message.created",
+        message=message,
+        sequence_head=message.sequence_number,
+    )
+    return message
 
 
 @router.patch(
@@ -96,6 +105,7 @@ async def patch_message(
     request: Request,
     payload: EditMessageRequest = Body(...),
     db: AsyncSession = Depends(get_db_session),
+    realtime_manager: RealtimeConnectionManager = Depends(get_realtime_manager),
     settings: Settings = Depends(get_settings_from_request),
 ) -> ConversationMessageResponse:
     auth_context = await get_auth_context(
@@ -105,12 +115,18 @@ async def patch_message(
         touch_session=False,
         required=True,
     )
-    return await edit_message(
+    message = await edit_message(
         db,
         user=auth_context.user,
         message_id=message_id,
         payload=payload,
     )
+    await realtime_manager.broadcast_message_event(
+        conversation_id=message.conversation_id,
+        event_type="message.updated",
+        message=message,
+    )
+    return message
 
 
 @router.delete(
@@ -126,6 +142,7 @@ async def remove_message(
     message_id: int,
     request: Request,
     db: AsyncSession = Depends(get_db_session),
+    realtime_manager: RealtimeConnectionManager = Depends(get_realtime_manager),
     settings: Settings = Depends(get_settings_from_request),
 ) -> ConversationMessageResponse:
     auth_context = await get_auth_context(
@@ -135,8 +152,14 @@ async def remove_message(
         touch_session=False,
         required=True,
     )
-    return await delete_message(
+    message = await delete_message(
         db,
         user=auth_context.user,
         message_id=message_id,
     )
+    await realtime_manager.broadcast_message_event(
+        conversation_id=message.conversation_id,
+        event_type="message.deleted",
+        message=message,
+    )
+    return message

@@ -700,7 +700,6 @@ describe("App routes", () => {
         id: "dm-preview",
         counterpart_user_id: "user-2",
         counterpart_username: "existing.friend",
-        counterpart_email: "friend@example.com",
         status: "active",
         created_at: "2026-04-18T09:00:00Z",
         is_initiator: false,
@@ -760,7 +759,6 @@ describe("App routes", () => {
           id: "dm-new",
           counterpart_user_id: "user-3",
           counterpart_username: "new.friend",
-          counterpart_email: "new.friend@example.com",
           status: "active",
           created_at: "2026-04-18T10:00:00Z",
           is_initiator: true,
@@ -796,7 +794,7 @@ describe("App routes", () => {
     await waitFor(() => {
       expect(screen.getByText("Direct message ready with new.friend.")).toBeInTheDocument();
       expect(screen.getByRole("heading", { name: "new.friend" })).toBeInTheDocument();
-      expect(screen.getAllByText("new.friend@example.com").length).toBeGreaterThan(0);
+      expect(screen.getByText("Direct conversation on the shared chat model.")).toBeInTheDocument();
     });
   });
 
