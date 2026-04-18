@@ -70,6 +70,15 @@ Start the full application:
 docker compose up --build
 ```
 
+If the first API image build is slow because package downloads are flaky, use:
+
+```powershell
+docker compose build api --progress=plain
+docker compose up
+```
+
+The API image now installs from `uv.lock`, so retries should be much more stable and subsequent builds should reuse the dependency cache.
+
 Basic checks after startup:
 
 1. Open `http://localhost:3000` and confirm the foundation page loads.
