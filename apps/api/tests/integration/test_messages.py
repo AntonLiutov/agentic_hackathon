@@ -100,6 +100,10 @@ def test_room_message_lifecycle_and_admin_delete(auth_client: TestClient) -> Non
     assert message_list_response.status_code == 200
     payload = message_list_response.json()
     assert payload["sequence_head"] == 2
+    assert payload["oldest_loaded_sequence"] == 1
+    assert payload["newest_loaded_sequence"] == 2
+    assert payload["next_before_sequence"] is None
+    assert payload["has_older"] is False
     assert [message["sequence_number"] for message in payload["messages"]] == [1, 2]
     assert payload["messages"][1]["is_deleted"] is True
 
@@ -196,3 +200,49 @@ def test_direct_message_lifecycle_respects_author_permissions(auth_client: TestC
     own_delete_response = auth_client.delete(f"/api/messages/{own_message_response.json()['id']}")
     assert own_delete_response.status_code == 200
     assert own_delete_response.json()["is_deleted"] is True
+
+
+def test_message_history_supports_cursor_pagination(auth_client: TestClient) -> None:
+    _register_user(auth_client, email="history-owner@example.com", username="history.owner")
+    room_response = auth_client.post(
+        "/api/rooms",
+        json={
+            "name": "history-room",
+            "description": "Room for history pagination testing.",
+            "visibility": "public",
+        },
+    )
+    assert room_response.status_code == 201
+    room_id = room_response.json()["id"]
+
+    for index in range(1, 5):
+        message_response = auth_client.post(
+            f"/api/conversations/{room_id}/messages",
+            json={"body_text": f"History message {index}"},
+        )
+        assert message_response.status_code == 201
+
+    latest_page_response = auth_client.get(
+        f"/api/conversations/{room_id}/messages",
+        params={"limit": 2},
+    )
+    assert latest_page_response.status_code == 200
+    latest_payload = latest_page_response.json()
+    assert latest_payload["sequence_head"] == 4
+    assert latest_payload["oldest_loaded_sequence"] == 3
+    assert latest_payload["newest_loaded_sequence"] == 4
+    assert latest_payload["next_before_sequence"] == 3
+    assert latest_payload["has_older"] is True
+    assert [message["sequence_number"] for message in latest_payload["messages"]] == [3, 4]
+
+    older_page_response = auth_client.get(
+        f"/api/conversations/{room_id}/messages",
+        params={"limit": 2, "before_sequence": latest_payload["next_before_sequence"]},
+    )
+    assert older_page_response.status_code == 200
+    older_payload = older_page_response.json()
+    assert older_payload["oldest_loaded_sequence"] == 1
+    assert older_payload["newest_loaded_sequence"] == 2
+    assert older_payload["next_before_sequence"] is None
+    assert older_payload["has_older"] is False
+    assert [message["sequence_number"] for message in older_payload["messages"]] == [1, 2]

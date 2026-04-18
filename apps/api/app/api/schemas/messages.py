@@ -43,6 +43,10 @@ class ConversationMessageResponse(BaseModel):
 class ConversationMessageListResponse(BaseModel):
     conversation_id: UUID
     sequence_head: int
+    oldest_loaded_sequence: int | None
+    newest_loaded_sequence: int | None
+    next_before_sequence: int | None
+    has_older: bool
     messages: list[ConversationMessageResponse]
 
 

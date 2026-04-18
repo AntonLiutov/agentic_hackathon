@@ -28,6 +28,10 @@ export type ConversationMessage = {
 export type ConversationMessageListResponse = {
   conversation_id: string;
   sequence_head: number;
+  oldest_loaded_sequence: number | null;
+  newest_loaded_sequence: number | null;
+  next_before_sequence: number | null;
+  has_older: boolean;
   messages: ConversationMessage[];
 };
 
@@ -41,11 +45,11 @@ export type EditMessagePayload = {
 };
 
 export const messagesApi = {
-  list(conversationId: string, limit = 50) {
+  list(conversationId: string, limit = 50, beforeSequence?: number) {
     return apiRequest<ConversationMessageListResponse>(
       `/api/conversations/${conversationId}/messages`,
       {
-        query: { limit },
+        query: { limit, before_sequence: beforeSequence },
       },
     );
   },

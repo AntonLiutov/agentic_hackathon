@@ -509,6 +509,10 @@ h2 {
   align-items: start;
 }
 
+.chat-room-layout--narrow-rail {
+  grid-template-columns: minmax(0, 1fr) minmax(220px, 260px);
+}
+
 .chat-room-main,
 .room-context-rail {
   min-width: 0;
@@ -517,6 +521,10 @@ h2 {
 .room-context-rail {
   display: grid;
   gap: 1rem;
+}
+
+.room-context-rail--narrow {
+  gap: 0.85rem;
 }
 
 .room-context-card-header {
@@ -537,6 +545,12 @@ h2 {
 
 .room-people-card {
   min-height: 0;
+}
+
+.room-people-card--bounded {
+  max-height: min(48vh, 420px);
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
 }
 
 .room-people-list {
@@ -577,6 +591,19 @@ h2 {
   display: grid;
   gap: 0.85rem;
   margin-bottom: 1.3rem;
+}
+
+.message-list--scrollable {
+  max-height: 56vh;
+  overflow-y: auto;
+  padding-right: 0.35rem;
+  align-content: start;
+}
+
+.message-history-banner {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 0.15rem;
 }
 
 .message-card {

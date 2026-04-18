@@ -24,14 +24,16 @@ router = APIRouter(tags=["messages"])
     response_model=ConversationMessageListResponse,
     summary="List recent messages for a conversation",
     description=(
-        "Returns the most recent persisted messages for a room or direct message conversation "
-        "in chronological order, together with the current sequence head."
+        "Returns persisted messages for a room or direct message conversation in chronological "
+        "order, together with sequence continuity metadata and an optional cursor for older "
+        "history."
     ),
 )
 async def get_conversation_messages(
     conversation_id: UUID,
     request: Request,
     limit: int = Query(default=50, ge=1, le=100),
+    before_sequence: int | None = Query(default=None, ge=1),
     db: AsyncSession = Depends(get_db_session),
     settings: Settings = Depends(get_settings_from_request),
 ) -> ConversationMessageListResponse:
@@ -47,6 +49,7 @@ async def get_conversation_messages(
         user=auth_context.user,
         conversation_id=conversation_id,
         limit=limit,
+        before_sequence=before_sequence,
     )
 
 

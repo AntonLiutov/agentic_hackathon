@@ -182,6 +182,7 @@ async def list_recent_messages(
     user: User,
     conversation_id: UUID,
     limit: int = 50,
+    before_sequence: int | None = None,
 ) -> ConversationMessageListResponse:
     access_context = await get_conversation_access_context(
         db,
@@ -195,14 +196,25 @@ async def list_recent_messages(
             current_user_is_room_admin=access_context.is_room_admin,
         )
         .order_by(Message.sequence_number.desc())
-        .limit(limit)
     )
-    rows = (await db.execute(query)).all()
-    messages = [_project_message(row) for row in reversed(rows)]
+
+    if before_sequence is not None:
+        query = query.where(Message.sequence_number < before_sequence)
+
+    rows = (await db.execute(query.limit(limit + 1))).all()
+    has_older = len(rows) > limit
+    page_rows = rows[:limit]
+    messages = [_project_message(row) for row in reversed(page_rows)]
+    oldest_loaded_sequence = messages[0].sequence_number if messages else None
+    newest_loaded_sequence = messages[-1].sequence_number if messages else None
 
     return ConversationMessageListResponse(
         conversation_id=conversation_id,
         sequence_head=access_context.conversation.message_sequence_head,
+        oldest_loaded_sequence=oldest_loaded_sequence,
+        newest_loaded_sequence=newest_loaded_sequence,
+        next_before_sequence=oldest_loaded_sequence if has_older else None,
+        has_older=has_older,
         messages=messages,
     )
 
