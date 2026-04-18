@@ -87,7 +87,13 @@ export function AppFrame() {
             <span>{user?.name}</span>
             <small>{user?.email}</small>
           </div>
-          <button className="ghost-button" onClick={signOut} type="button">
+          <button
+            className="ghost-button"
+            onClick={() => {
+              void signOut();
+            }}
+            type="button"
+          >
             Sign out
           </button>
         </div>

@@ -1,7 +1,8 @@
-import { useMemo } from "react";
+import { type FormEvent, useMemo, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 
 import { useSession } from "../../features/session/use-session";
+import { getApiErrorMessage } from "../../shared/api/client";
 import { AuthPageLayout } from "./AuthPageLayout";
 
 type RedirectState = {
@@ -11,40 +12,70 @@ type RedirectState = {
 export function SignInPage() {
   const navigate = useNavigate();
   const location = useLocation();
-  const { signInPreview } = useSession();
+  const { signIn } = useSession();
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const redirectTo = useMemo(() => {
     const state = location.state as RedirectState | null;
     return state?.redirectTo ?? "/app/chats";
   }, [location.state]);
 
-  function handlePreviewSignIn() {
-    signInPreview();
-    navigate(redirectTo, { replace: true });
+  async function handleSignIn(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setErrorMessage(null);
+    setIsSubmitting(true);
+
+    try {
+      await signIn({ email, password });
+      navigate(redirectTo, { replace: true });
+    } catch (error) {
+      setErrorMessage(getApiErrorMessage(error, "Unable to sign in right now."));
+    } finally {
+      setIsSubmitting(false);
+    }
   }
 
   return (
     <AuthPageLayout
       eyebrow="Access"
       title="Sign in"
-      description="The real auth flow lands in Sprint 1 identity work. For now, this page establishes the route and UX structure."
+      description="Sign in with your email and password to bootstrap the current browser session."
       footer={
         <p>
           Need an account? <Link to="/register">Register</Link>
         </p>
       }
     >
-      <form className="auth-form">
+      <form className="auth-form" onSubmit={handleSignIn}>
         <label>
           <span>Email</span>
-          <input type="email" placeholder="you@example.com" disabled />
+          <input
+            type="email"
+            placeholder="you@example.com"
+            value={email}
+            onChange={(event) => setEmail(event.target.value)}
+            autoComplete="email"
+            required
+          />
         </label>
         <label>
           <span>Password</span>
-          <input type="password" placeholder="••••••••" disabled />
+          <input
+            type="password"
+            placeholder="********"
+            value={password}
+            onChange={(event) => setPassword(event.target.value)}
+            autoComplete="current-password"
+            minLength={8}
+            required
+          />
         </label>
-        <button className="primary-button" type="button" onClick={handlePreviewSignIn}>
-          Enter workspace preview
+        {errorMessage ? <p className="auth-error">{errorMessage}</p> : null}
+        <button className="primary-button" type="submit" disabled={isSubmitting}>
+          {isSubmitting ? "Signing in..." : "Sign in"}
         </button>
       </form>
 
