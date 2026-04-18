@@ -1,3 +1,4 @@
+import type { PresenceStatus } from "./presence";
 import { apiRequest } from "./client";
 
 export type RoomVisibility = "public" | "private";
@@ -27,6 +28,7 @@ export type RoomMember = {
   is_owner: boolean;
   is_admin: boolean;
   can_remove: boolean;
+  presence_status: PresenceStatus;
 };
 
 export type RoomBan = {

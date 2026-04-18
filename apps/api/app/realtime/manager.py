@@ -151,6 +151,38 @@ class RealtimeConnectionManager:
             for websocket in sockets:
                 await self.disconnect_inbox(user_id, websocket)
 
+    async def broadcast_presence_event(
+        self,
+        *,
+        user_ids: list[UUID],
+        subject_user_id: UUID,
+        presence_status: str,
+    ) -> None:
+        stale_sockets_by_user: dict[UUID, list[WebSocket]] = defaultdict(list)
+
+        async with self._lock:
+            connections_by_user = {
+                user_id: list(self._user_connections.get(user_id, set()))
+                for user_id in user_ids
+            }
+
+        payload = {
+            "type": "presence.updated",
+            "user_id": str(subject_user_id),
+            "presence_status": presence_status,
+        }
+
+        for user_id, sockets in connections_by_user.items():
+            for websocket in sockets:
+                try:
+                    await websocket.send_json(payload)
+                except Exception:
+                    stale_sockets_by_user[user_id].append(websocket)
+
+        for user_id, sockets in stale_sockets_by_user.items():
+            for websocket in sockets:
+                await self.disconnect_inbox(user_id, websocket)
+
     async def close(self) -> None:
         async with self._lock:
             conversation_connections = {

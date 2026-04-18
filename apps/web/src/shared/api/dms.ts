@@ -1,9 +1,11 @@
+import type { PresenceStatus } from "./presence";
 import { apiRequest } from "./client";
 
 export type DirectMessage = {
   id: string;
   counterpart_user_id: string;
   counterpart_username: string;
+  counterpart_presence_status: PresenceStatus;
   status: "active" | "frozen";
   created_at: string;
   is_initiator: boolean;

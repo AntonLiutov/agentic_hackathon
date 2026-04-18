@@ -5,7 +5,7 @@ from uuid import UUID
 from fastapi import APIRouter, Body, Depends, Query, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.dependencies import get_db_session, get_settings_from_request
+from app.api.dependencies import get_db_session, get_presence_service, get_settings_from_request
 from app.api.schemas.auth import ActionResponse
 from app.api.schemas.rooms import (
     CreateRoomInvitationRequest,
@@ -19,6 +19,7 @@ from app.api.schemas.rooms import (
 )
 from app.auth.service import get_auth_context
 from app.core.config import Settings
+from app.presence.service import PresenceService
 from app.rooms.service import (
     accept_room_invitation,
     create_room,
@@ -143,6 +144,7 @@ async def get_room_members(
     room_id: UUID,
     request: Request,
     db: AsyncSession = Depends(get_db_session),
+    presence_service: PresenceService = Depends(get_presence_service),
     settings: Settings = Depends(get_settings_from_request),
 ) -> RoomMemberListResponse:
     auth_context = await get_auth_context(
@@ -152,8 +154,17 @@ async def get_room_members(
         touch_session=True,
         required=True,
     )
+    members = await list_room_members(db, user=auth_context.user, room_id=room_id)
+    presence_by_user_id = await presence_service.get_user_statuses(
+        [member.id for member in members]
+    )
     return RoomMemberListResponse(
-        members=await list_room_members(db, user=auth_context.user, room_id=room_id)
+        members=[
+            member.model_copy(
+                update={"presence_status": presence_by_user_id.get(member.id, "offline")}
+            )
+            for member in members
+        ]
     )
 
 

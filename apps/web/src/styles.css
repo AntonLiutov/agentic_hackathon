@@ -609,6 +609,36 @@ h2 {
   display: block;
 }
 
+.presence-meta,
+.presence-inline {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  flex-wrap: wrap;
+}
+
+.presence-dot {
+  width: 0.65rem;
+  height: 0.65rem;
+  border-radius: 999px;
+  display: inline-block;
+}
+
+.presence-dot--online {
+  background: #6ee7a2;
+  box-shadow: 0 0 0 4px rgba(110, 231, 162, 0.12);
+}
+
+.presence-dot--afk {
+  background: #f6be6d;
+  box-shadow: 0 0 0 4px rgba(246, 190, 109, 0.12);
+}
+
+.presence-dot--offline {
+  background: rgba(244, 239, 228, 0.38);
+  box-shadow: 0 0 0 4px rgba(244, 239, 228, 0.06);
+}
+
 .message-list {
   display: grid;
   gap: 0.85rem;

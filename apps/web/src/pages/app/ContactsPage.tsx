@@ -17,6 +17,7 @@ import {
   type ConversationMessage,
 } from "../../shared/api/messages";
 import { useWorkspaceContextPanel } from "../../features/layout/workspace-context-panel";
+import { usePresence } from "../../features/presence/use-presence";
 import { useSession } from "../../features/session/use-session";
 import { useConversationRealtime } from "../../shared/realtime/useConversationRealtime";
 
@@ -39,6 +40,10 @@ function getReplyPreview(message: ConversationMessage) {
   return `${message.reply_to_message.author_username}: ${message.reply_to_message.body_text ?? ""}`;
 }
 
+function formatPresenceLabel(presenceStatus: "online" | "afk" | "offline") {
+  return presenceStatus === "afk" ? "AFK" : presenceStatus;
+}
+
 const MESSAGE_PAGE_SIZE = 30;
 
 function upsertConversationMessage(
@@ -55,6 +60,7 @@ function upsertConversationMessage(
 
 export function ContactsPage() {
   const { user } = useSession();
+  const { getPresence, setMany } = usePresence();
   const { setPanelContent } = useWorkspaceContextPanel();
   const {
     clearMessages: clearDirectMessageMessages,
@@ -88,6 +94,19 @@ export function ContactsPage() {
   const pendingScrollRestoreRef = useRef<{ previousHeight: number; previousTop: number } | null>(
     null,
   );
+
+  useEffect(() => {
+    if (directMessages.length === 0) {
+      return;
+    }
+
+    setMany(
+      directMessages.map((directMessage) => ({
+        userId: directMessage.counterpart_user_id,
+        status: directMessage.counterpart_presence_status,
+      })),
+    );
+  }, [directMessages, setMany]);
 
   const loadLatestMessages = useCallback(async (conversationId: string) => {
     const response = await messagesApi.list(conversationId, MESSAGE_PAGE_SIZE);
@@ -440,6 +459,13 @@ export function ContactsPage() {
                 <div className="room-header-actions">
                   <span className="status-pill status-pill--neutral">direct message</span>
                   <span className="status-pill status-pill--neutral">
+                    {formatPresenceLabel(
+                      getPresence(selectedDirectMessage.counterpart_user_id) ??
+                        selectedDirectMessage.counterpart_presence_status ??
+                        "offline",
+                    )}
+                  </span>
+                  <span className="status-pill status-pill--neutral">
                     {selectedDirectMessage.status}
                   </span>
                   <span className="status-pill status-pill--neutral">sequence {sequenceHead}</span>
@@ -646,7 +672,20 @@ export function ContactsPage() {
                       }}
                     >
                       <span>{directMessage.counterpart_username}</span>
-                      <small>Direct message</small>
+                      <small className="presence-inline">
+                        <span
+                          className={`presence-dot presence-dot--${
+                            getPresence(directMessage.counterpart_user_id) ??
+                            directMessage.counterpart_presence_status ??
+                            "offline"
+                          }`}
+                        />
+                        {formatPresenceLabel(
+                          getPresence(directMessage.counterpart_user_id) ??
+                            directMessage.counterpart_presence_status ??
+                            "offline",
+                        )}
+                      </small>
                       {directMessage.unread_count > 0 ? (
                         <span className="sidebar-badge">{directMessage.unread_count}</span>
                       ) : null}

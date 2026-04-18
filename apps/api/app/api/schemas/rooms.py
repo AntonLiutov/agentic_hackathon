@@ -6,6 +6,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, StringConstraints
 
+from app.api.schemas.presence import PresenceStatus
 from app.db.models.enums import InvitationStatus, RoomVisibility
 
 RoomName = Annotated[
@@ -82,6 +83,7 @@ class RoomMemberResponse(BaseModel):
     is_owner: bool
     is_admin: bool
     can_remove: bool
+    presence_status: PresenceStatus = "offline"
 
 
 class RoomMemberListResponse(BaseModel):
