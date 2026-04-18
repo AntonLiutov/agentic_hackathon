@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.routes.auth import router as auth_router
 from app.api.routes.health import router as health_router
+from app.api.routes.rooms import router as rooms_router
 from app.core.config import get_settings
 from app.core.lifespan import lifespan
 
@@ -20,6 +21,10 @@ openapi_tags = [
     {
         "name": "auth",
         "description": "Registration, login, session bootstrap, and logout endpoints.",
+    },
+    {
+        "name": "rooms",
+        "description": "Room creation, catalog discovery, membership, and invitations.",
     },
 ]
 
@@ -48,6 +53,7 @@ app.add_middleware(
 
 app.include_router(auth_router)
 app.include_router(health_router)
+app.include_router(rooms_router)
 
 
 @app.get(

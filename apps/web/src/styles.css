@@ -42,6 +42,7 @@ a {
 
 button,
 input,
+select,
 textarea {
   font: inherit;
 }
@@ -263,6 +264,8 @@ h2 {
 }
 
 .auth-form input,
+.compact-form input,
+.compact-form select,
 .sidebar-search input,
 .composer-shell textarea {
   width: 100%;
@@ -274,6 +277,7 @@ h2 {
 }
 
 .auth-form input:disabled,
+.compact-form input:disabled,
 .composer-shell textarea::placeholder {
   color: rgba(247, 241, 232, 0.5);
 }
@@ -400,7 +404,102 @@ h2 {
   color: rgba(244, 239, 228, 0.6);
 }
 
+.compact-form {
+  display: grid;
+  gap: 0.8rem;
+  margin-top: 1rem;
+}
+
+.compact-form label {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.compact-submit {
+  width: 100%;
+}
+
+.sidebar-empty {
+  color: rgba(244, 239, 228, 0.7);
+  margin-bottom: 0;
+}
+
+.sidebar-room-list {
+  list-style: none;
+  padding-left: 0;
+}
+
+.sidebar-room-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.65rem;
+}
+
+.sidebar-room-item .sidebar-room-button {
+  min-width: 0;
+}
+
+.sidebar-room-button span,
+.sidebar-room-button small {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sidebar-room-button {
+  width: 100%;
+  display: grid;
+  gap: 0.15rem;
+  padding: 0.8rem 0.95rem;
+  border-radius: 18px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.04);
+  color: inherit;
+  text-align: left;
+}
+
+.sidebar-room-button.is-active {
+  border-color: rgba(246, 190, 109, 0.34);
+  background: rgba(246, 190, 109, 0.1);
+}
+
+.sidebar-action-button {
+  min-width: 86px;
+  justify-content: center;
+  white-space: nowrap;
+}
+
+.sidebar-muted {
+  color: rgba(244, 239, 228, 0.55);
+  font-size: 0.85rem;
+}
+
 .chat-header {
+  margin-bottom: 1.3rem;
+}
+
+.room-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  align-items: flex-start;
+}
+
+.room-header-actions,
+.room-summary-grid {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.room-header-actions {
+  justify-items: end;
+}
+
+.room-summary-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   margin-bottom: 1.3rem;
 }
 
@@ -582,5 +681,22 @@ h2 {
   .session-card-header {
     flex-direction: column;
     align-items: stretch;
+  }
+
+  .room-header,
+  .room-summary-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .room-header-actions {
+    justify-items: start;
+  }
+
+  .sidebar-room-item {
+    grid-template-columns: 1fr;
+  }
+
+  .sidebar-action-button {
+    width: 100%;
   }
 }
