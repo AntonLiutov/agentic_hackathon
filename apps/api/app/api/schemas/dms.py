@@ -13,7 +13,6 @@ class DirectMessageSummaryResponse(BaseModel):
     id: UUID
     counterpart_user_id: UUID
     counterpart_username: str
-    counterpart_email: str
     status: DmStatus
     created_at: datetime
     is_initiator: bool

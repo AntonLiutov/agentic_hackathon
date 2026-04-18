@@ -67,6 +67,7 @@ def test_direct_message_creation_listing_and_access_rules(auth_client: TestClien
     dm_payload = create_response.json()
     assert dm_payload["counterpart_username"] == "dm.target"
     assert dm_payload["can_message"] is True
+    assert "counterpart_email" not in dm_payload
     dm_id = dm_payload["id"]
 
     repeat_create_response = auth_client.post(
@@ -88,6 +89,7 @@ def test_direct_message_creation_listing_and_access_rules(auth_client: TestClien
     target_dm_summary = auth_client.get(f"/api/dms/{dm_id}")
     assert target_dm_summary.status_code == 200
     assert target_dm_summary.json()["counterpart_username"] == "dm.owner"
+    assert "counterpart_email" not in target_dm_summary.json()
 
     target_dms = auth_client.get("/api/dms/mine")
     assert target_dms.status_code == 200

@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -6,6 +6,40 @@ import { AppProviders } from "../../src/app/providers";
 import { AppRouter } from "../../src/app/router";
 
 const fetchMock = vi.fn<typeof fetch>();
+
+class MockWebSocket {
+  static instances: MockWebSocket[] = [];
+
+  onopen: ((event: Event) => void) | null = null;
+  onmessage: ((event: MessageEvent<string>) => void) | null = null;
+  onclose: ((event: CloseEvent) => void) | null = null;
+  onerror: ((event: Event) => void) | null = null;
+
+  constructor(public readonly url: string) {
+    MockWebSocket.instances.push(this);
+    queueMicrotask(() => {
+      this.onopen?.(new Event("open"));
+    });
+  }
+
+  send(_data: string) {}
+
+  close() {
+    this.onclose?.(new CloseEvent("close"));
+  }
+
+  emit(payload: unknown) {
+    this.onmessage?.(
+      new MessageEvent("message", {
+        data: JSON.stringify(payload),
+      }),
+    );
+  }
+
+  static reset() {
+    MockWebSocket.instances = [];
+  }
+}
 
 function renderRoutes(initialEntries: string[]) {
   return render(
@@ -27,6 +61,7 @@ describe("Message lifecycle", () => {
 
   afterEach(() => {
     fetchMock.mockReset();
+    MockWebSocket.reset();
     vi.unstubAllGlobals();
   });
 
@@ -324,7 +359,6 @@ describe("Message lifecycle", () => {
         id: "dm-preview",
         counterpart_user_id: "user-2",
         counterpart_username: "existing.friend",
-        counterpart_email: "friend@example.com",
         status: "active",
         created_at: "2026-04-18T09:00:00Z",
         is_initiator: false,
@@ -667,6 +701,177 @@ describe("Message lifecycle", () => {
       expect(
         screen.queryByRole("button", { name: "Load older messages" }),
       ).not.toBeInTheDocument();
+    });
+  });
+
+  it("applies live room message events from the websocket stream", async () => {
+    vi.stubGlobal("WebSocket", MockWebSocket as unknown as typeof WebSocket);
+
+    const initialMessages = [
+      {
+        id: 1,
+        conversation_id: "room-engineering",
+        author_user_id: "user-1",
+        author_username: "Preview User",
+        sequence_number: 1,
+        body_text: "Initial realtime message",
+        reply_to_message_id: null,
+        reply_to_message: null,
+        created_at: "2026-04-18T09:00:00Z",
+        edited_at: null,
+        deleted_at: null,
+        is_edited: false,
+        is_deleted: false,
+        can_edit: true,
+        can_delete: true,
+      },
+    ];
+
+    fetchMock.mockImplementation(async (input, init) => {
+      const url = typeof input === "string" ? input : input.toString();
+
+      if (url.endsWith("/api/auth/me")) {
+        return new Response(
+          JSON.stringify({
+            user: {
+              id: "user-1",
+              username: "Preview User",
+              email: "preview@agentic.chat",
+            },
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        );
+      }
+
+      if (url.includes("/api/rooms/mine") || url.includes("/api/rooms/public")) {
+        return new Response(
+          JSON.stringify({
+            rooms: [
+              {
+                id: "room-engineering",
+                name: "engineering-room",
+                description: "Coordination room for the main launch.",
+                visibility: "public",
+                owner_user_id: "user-1",
+                member_count: 2,
+                is_member: true,
+                is_owner: true,
+                is_admin: true,
+                is_banned: false,
+                can_join: false,
+                can_leave: false,
+                can_manage_members: true,
+                joined_at: "2026-04-18T08:00:00Z",
+              },
+            ],
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        );
+      }
+
+      if (url.endsWith("/api/rooms/invitations/mine")) {
+        return new Response(JSON.stringify({ invitations: [] }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      if (url.endsWith("/api/rooms/room-engineering/members")) {
+        return new Response(
+          JSON.stringify({
+            members: [
+              {
+                id: "user-1",
+                username: "Preview User",
+                email: "preview@agentic.chat",
+                joined_at: "2026-04-18T08:00:00Z",
+                is_owner: true,
+                is_admin: true,
+                can_remove: false,
+              },
+            ],
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        );
+      }
+
+      if (url.endsWith("/api/rooms/room-engineering/bans")) {
+        return new Response(JSON.stringify({ bans: [] }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      if (
+        url.includes("/api/conversations/room-engineering/messages") &&
+        (!init?.method || init.method === "GET")
+      ) {
+        return new Response(
+          JSON.stringify({
+            conversation_id: "room-engineering",
+            sequence_head: 1,
+            oldest_loaded_sequence: 1,
+            newest_loaded_sequence: 1,
+            next_before_sequence: null,
+            has_older: false,
+            messages: initialMessages,
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        );
+      }
+
+      if (url.endsWith("/api/dms/mine")) {
+        return new Response(JSON.stringify({ direct_messages: [] }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      return new Response(JSON.stringify({ detail: "Unhandled request in test." }), {
+        status: 500,
+        headers: { "Content-Type": "application/json" },
+      });
+    });
+
+    renderRoutes(["/app/chats"]);
+
+    await waitFor(() => {
+      expect(screen.getByText("Initial realtime message")).toBeInTheDocument();
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText("live updates")).toBeInTheDocument();
+      expect(MockWebSocket.instances).toHaveLength(1);
+    });
+
+    await act(async () => {
+      MockWebSocket.instances[0].emit({
+        type: "message.created",
+        conversation_id: "room-engineering",
+        sequence_head: 2,
+        message: {
+          id: 2,
+          conversation_id: "room-engineering",
+          author_user_id: "user-2",
+          author_username: "guest.user",
+          sequence_number: 2,
+          body_text: "Message delivered live",
+          reply_to_message_id: null,
+          reply_to_message: null,
+          created_at: "2026-04-18T09:02:00Z",
+          edited_at: null,
+          deleted_at: null,
+          is_edited: false,
+          is_deleted: false,
+          can_edit: false,
+          can_delete: false,
+        },
+      });
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText("Message delivered live")).toBeInTheDocument();
+      expect(screen.getByText("sequence 2")).toBeInTheDocument();
     });
   });
 });

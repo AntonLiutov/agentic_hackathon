@@ -1,4 +1,5 @@
 import {
+  useCallback,
   type FormEvent,
   type UIEvent,
   useEffect,
@@ -13,6 +14,7 @@ import {
   messagesApi,
   type ConversationMessage,
 } from "../../shared/api/messages";
+import { useConversationRealtime } from "../../shared/realtime/useConversationRealtime";
 import { roomsApi, type RoomBan, type RoomMember } from "../../shared/api/rooms";
 
 function formatMessageTime(value: string) {
@@ -35,6 +37,18 @@ function getReplyPreview(message: ConversationMessage) {
 }
 
 const MESSAGE_PAGE_SIZE = 30;
+
+function upsertConversationMessage(
+  currentMessages: ConversationMessage[],
+  nextMessage: ConversationMessage,
+) {
+  const mergedMessages = [
+    ...currentMessages.filter((message) => message.id !== nextMessage.id),
+    nextMessage,
+  ];
+  mergedMessages.sort((left, right) => left.sequence_number - right.sequence_number);
+  return mergedMessages;
+}
 
 export function ChatsPage() {
   const { inviteToRoom, joinRoom, leaveRoom, refreshRooms, selectedRoom } = useRooms();
@@ -64,6 +78,18 @@ export function ChatsPage() {
   const shouldAutoScrollRef = useRef(false);
   const pendingScrollRestoreRef = useRef<{ previousHeight: number; previousTop: number } | null>(
     null,
+  );
+
+  const loadLatestMessages = useCallback(
+    async (roomId: string) => {
+      const response = await messagesApi.list(roomId, MESSAGE_PAGE_SIZE);
+      setMessages(response.messages);
+      setSequenceHead(response.sequence_head);
+      setHasOlderMessages(response.has_older);
+      setNextBeforeSequence(response.next_before_sequence);
+      return response;
+    },
+    [],
   );
 
   function isNearBottom() {
@@ -172,16 +198,11 @@ export function ChatsPage() {
       shouldAutoScrollRef.current = true;
 
       try {
-        const response = await messagesApi.list(activeRoomId, MESSAGE_PAGE_SIZE);
+        const response = await loadLatestMessages(activeRoomId);
 
         if (isCancelled) {
           return;
         }
-
-        setMessages(response.messages);
-        setSequenceHead(response.sequence_head);
-        setHasOlderMessages(response.has_older);
-        setNextBeforeSequence(response.next_before_sequence);
       } catch (error) {
         if (isCancelled) {
           return;
@@ -206,7 +227,7 @@ export function ChatsPage() {
     return () => {
       isCancelled = true;
     };
-  }, [selectedRoom?.id, selectedRoom?.is_member]);
+  }, [loadLatestMessages, selectedRoom?.id, selectedRoom?.is_member]);
 
   async function loadOlderMessages() {
     if (!selectedRoom || !nextBeforeSequence || isLoadingOlderMessages) {
@@ -375,9 +396,7 @@ export function ChatsPage() {
           body_text: composeText,
         });
         setMessages((currentMessages) =>
-          currentMessages.map((message) =>
-            message.id === updatedMessage.id ? updatedMessage : message,
-          ),
+          upsertConversationMessage(currentMessages, updatedMessage),
         );
         setPanelNotice("Message updated.");
       } else {
@@ -386,8 +405,12 @@ export function ChatsPage() {
           body_text: composeText,
           reply_to_message_id: replyTarget?.id,
         });
-        setMessages((currentMessages) => [...currentMessages, createdMessage]);
-        setSequenceHead(createdMessage.sequence_number);
+        setMessages((currentMessages) =>
+          upsertConversationMessage(currentMessages, createdMessage),
+        );
+        setSequenceHead((currentSequenceHead) =>
+          Math.max(currentSequenceHead, createdMessage.sequence_number),
+        );
       }
 
       resetComposerState();
@@ -422,9 +445,7 @@ export function ChatsPage() {
     try {
       const deletedMessage = await messagesApi.delete(message.id);
       setMessages((currentMessages) =>
-        currentMessages.map((currentMessage) =>
-          currentMessage.id === deletedMessage.id ? deletedMessage : currentMessage,
-        ),
+        upsertConversationMessage(currentMessages, deletedMessage),
       );
 
       if (editingMessageId === message.id || replyTarget?.id === message.id) {
@@ -436,6 +457,54 @@ export function ChatsPage() {
       setUpdatingMessageId(null);
     }
   }
+
+  const realtime = useConversationRealtime({
+    conversationId: selectedRoom?.is_member ? selectedRoom.id : null,
+    enabled: Boolean(selectedRoom?.is_member),
+    onMessageCreated: useCallback(
+      (message, liveSequenceHead) => {
+        shouldAutoScrollRef.current = isNearBottom();
+
+        setMessages((currentMessages) => {
+          const newestLoadedSequence = currentMessages[currentMessages.length - 1]?.sequence_number ?? 0;
+
+          if (
+            newestLoadedSequence > 0 &&
+            message.sequence_number > newestLoadedSequence + 1 &&
+            selectedRoom?.id
+          ) {
+            shouldAutoScrollRef.current = false;
+            void loadLatestMessages(selectedRoom.id);
+            return currentMessages;
+          }
+
+          return upsertConversationMessage(currentMessages, message);
+        });
+        setSequenceHead((currentSequenceHead) =>
+          Math.max(currentSequenceHead, liveSequenceHead ?? message.sequence_number),
+        );
+      },
+      [loadLatestMessages, selectedRoom?.id],
+    ),
+    onMessageUpdated: useCallback((message) => {
+      setMessages((currentMessages) => {
+        if (!currentMessages.some((currentMessage) => currentMessage.id === message.id)) {
+          return currentMessages;
+        }
+
+        return upsertConversationMessage(currentMessages, message);
+      });
+    }, []),
+    onMessageDeleted: useCallback((message) => {
+      setMessages((currentMessages) => {
+        if (!currentMessages.some((currentMessage) => currentMessage.id === message.id)) {
+          return currentMessages;
+        }
+
+        return upsertConversationMessage(currentMessages, message);
+      });
+    }, []),
+  });
 
   if (!selectedRoom) {
     return (
@@ -552,6 +621,19 @@ export function ChatsPage() {
             {selectedRoom.member_count} member{selectedRoom.member_count === 1 ? "" : "s"}
           </span>
           <span className="status-pill status-pill--neutral">sequence {sequenceHead}</span>
+          <span
+            className={
+              realtime.status === "live"
+                ? "status-pill status-pill--success"
+                : "status-pill status-pill--warning"
+            }
+          >
+            {realtime.status === "live"
+              ? "live updates"
+              : realtime.status === "reconnecting"
+                ? "reconnecting"
+                : "connecting"}
+          </span>
           {selectedRoom.can_leave ? (
             <button
               className="ghost-button"

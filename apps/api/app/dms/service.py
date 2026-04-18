@@ -23,10 +23,8 @@ class _DmProjection:
     initiated_by_user_id: UUID | None
     user_one_id: UUID
     user_one_username: str
-    user_one_email: str
     user_two_id: UUID
     user_two_username: str
-    user_two_email: str
 
 
 def _order_user_pair(left_user_id: UUID, right_user_id: UUID) -> tuple[UUID, UUID]:
@@ -45,17 +43,14 @@ def _project_dm_summary(
     if projection.user_one_id == current_user_id:
         counterpart_user_id = projection.user_two_id
         counterpart_username = projection.user_two_username
-        counterpart_email = projection.user_two_email
     else:
         counterpart_user_id = projection.user_one_id
         counterpart_username = projection.user_one_username
-        counterpart_email = projection.user_one_email
 
     return DirectMessageSummaryResponse(
         id=projection.conversation_id,
         counterpart_user_id=counterpart_user_id,
         counterpart_username=counterpart_username,
-        counterpart_email=counterpart_email,
         status=projection.status,
         created_at=projection.created_at,
         is_initiator=projection.initiated_by_user_id == current_user_id,
@@ -75,10 +70,8 @@ def _dm_projection_query(*, current_user_id: UUID):
             DmMetadata.initiated_by_user_id,
             DmMetadata.user_one_id,
             user_one.c.username,
-            user_one.c.email,
             DmMetadata.user_two_id,
             user_two.c.username,
-            user_two.c.email,
         )
         .join(DmMetadata, DmMetadata.conversation_id == Conversation.id)
         .join(
@@ -117,10 +110,8 @@ async def list_direct_messages(
                 initiated_by_user_id=initiated_by_user_id,
                 user_one_id=user_one_id,
                 user_one_username=user_one_username,
-                user_one_email=user_one_email,
                 user_two_id=user_two_id,
                 user_two_username=user_two_username,
-                user_two_email=user_two_email,
             ),
             current_user_id=user.id,
         )
@@ -131,10 +122,8 @@ async def list_direct_messages(
             initiated_by_user_id,
             user_one_id,
             user_one_username,
-            user_one_email,
             user_two_id,
             user_two_username,
-            user_two_email,
         ) in rows
     ]
 
@@ -164,10 +153,8 @@ async def get_direct_message_summary(
             initiated_by_user_id=row[3],
             user_one_id=row[4],
             user_one_username=row[5],
-            user_one_email=row[6],
-            user_two_id=row[7],
-            user_two_username=row[8],
-            user_two_email=row[9],
+            user_two_id=row[6],
+            user_two_username=row[7],
         ),
         current_user_id=user.id,
     )
