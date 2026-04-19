@@ -48,6 +48,7 @@ Sprint 1, Sprint 2, and Sprint 3 are complete. Sprint 4 is in progress. The repo
 - account deletion with owned-room cleanup, room-membership removal, and preserved frozen DM history for surviving participants
 - permanent attachment file cleanup for deleted owned rooms
 - requirements audit in `docs/requirements-audit.md`
+- validation checklist in `docs/validation-checklist.md`
 - composer emoji picker with search, categories, and recent emoji
 - active room and DM resync after websocket reconnect
 
@@ -183,6 +184,8 @@ Basic checks after startup:
 54. Confirm rooms owned by other users survive, but the deleted account no longer appears in their member list.
 55. If the deleted user had an existing DM, confirm the surviving participant still sees that history, the counterpart is shown as `Deleted user`, and the DM is read-only.
 
+For a grouped validation path and current coverage snapshot, see `docs/validation-checklist.md`.
+
 Stop the stack:
 
 ```powershell
@@ -216,5 +219,6 @@ This repository currently targets:
 - `SP3-06 Attachment Authorization`
 - `SP3-07 Account Deletion`
 - `SP4-02 Reliability and Edge Cases`
+- `SP4-03 Validation and Test Coverage`
 
-Sprint 3 is complete. Sprint 4 is underway with reliability hardening completed first, followed by validation, performance/demo-data work, UI polish, and submission readiness.
+Sprint 3 is complete. Sprint 4 is underway with reliability hardening and validation completed first, followed by performance/demo-data work, UI polish, and submission readiness.

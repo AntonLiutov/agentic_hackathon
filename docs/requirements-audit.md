@@ -255,7 +255,7 @@ Main likely remaining base-spec gaps:
 | Explicit standalone room `Ban` action in admin UI | `done` | Clarified as optional because remove-member => ban is acceptable |
 | Wireframe alignment, especially side placement / accordion feel | `partial` | Handle in later UI polish branch |
 | Reliability proof for reconnect/stale-tab/unread/presence races | `done` | Broad automated validation completed in the Sprint 4 reliability/audit branch, including active-conversation reconnect recovery |
-| Stronger validation / test evidence | `partial` | `SP4-03` |
+| Stronger validation / test evidence | `done` | Validation checklist added in `docs/validation-checklist.md`, full-suite verification documented, and critical auth-flow coverage expanded in `SP4-03` |
 | Large-history / performance / demo-data proof | `partial` | `SP4-04` |
 | Submission-ready documentation / clean-clone proof | `partial` | `SP4-05` |
 | XMPP / federation | `missing` | Stretch only after core is solid |
