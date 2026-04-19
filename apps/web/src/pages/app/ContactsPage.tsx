@@ -25,6 +25,8 @@ import {
   messagesApi,
   type ConversationMessage,
 } from "../../shared/api/messages";
+import { EmojiPicker } from "../../shared/chat/EmojiPicker";
+import { appendEmoji } from "../../shared/chat/emoji";
 import { useWorkspaceContextPanel } from "../../features/layout/workspace-context-panel";
 import { usePresence } from "../../features/presence/use-presence";
 import { useSession } from "../../features/session/use-session";
@@ -156,6 +158,7 @@ export function ContactsPage() {
   const [pendingFiles, setPendingFiles] = useState<File[]>([]);
   const [attachmentComment, setAttachmentComment] = useState("");
   const [composerError, setComposerError] = useState<string | null>(null);
+  const [isEmojiPickerOpen, setIsEmojiPickerOpen] = useState(false);
   const messageListRef = useRef<HTMLDivElement | null>(null);
   const attachmentInputRef = useRef<HTMLInputElement | null>(null);
   const shouldAutoScrollRef = useRef(false);
@@ -447,6 +450,12 @@ export function ContactsPage() {
     setPendingFiles([]);
     setAttachmentComment("");
     setComposerError(null);
+    setIsEmojiPickerOpen(false);
+  }
+
+  function handleInsertEmoji(emoji: string) {
+    setComposeText((currentValue) => appendEmoji(currentValue, emoji));
+    setIsEmojiPickerOpen(false);
   }
 
   function addPendingFiles(nextFiles: File[]) {
@@ -668,6 +677,14 @@ export function ContactsPage() {
         return upsertConversationMessage(currentMessages, message);
       });
     }, []),
+    onConnected: useCallback(() => {
+      if (!selectedDirectMessageId) {
+        return;
+      }
+
+      void refreshDirectMessages();
+      void loadLatestMessages(selectedDirectMessageId);
+    }, [loadLatestMessages, refreshDirectMessages, selectedDirectMessageId]),
   });
 
   const contactsPanelContent = useMemo<ReactNode>(
@@ -1143,6 +1160,13 @@ export function ContactsPage() {
                   <div className="composer-toolbar">
                     <button
                       type="button"
+                      disabled={!selectedDirectMessage.can_message}
+                      onClick={() => setIsEmojiPickerOpen((currentValue) => !currentValue)}
+                    >
+                      Emoji
+                    </button>
+                    <button
+                      type="button"
                       disabled={editingMessageId !== null || !selectedDirectMessage.can_message}
                       onClick={() => attachmentInputRef.current?.click()}
                     >
@@ -1151,9 +1175,15 @@ export function ContactsPage() {
                     <span>
                       {editingMessageId !== null
                         ? "Editing an existing message."
-                        : "Direct messages now persist with replies, edits, deletes, attachments, and continuity sequence numbers."}
+                        : "Direct messages now persist with emoji, replies, edits, deletes, attachments, and continuity sequence numbers."}
                     </span>
                   </div>
+                  {isEmojiPickerOpen ? (
+                    <EmojiPicker
+                      disabled={!selectedDirectMessage.can_message}
+                      onSelect={handleInsertEmoji}
+                    />
+                  ) : null}
                   {composerError ? (
                     <p className="composer-feedback composer-feedback--error">{composerError}</p>
                   ) : null}

@@ -861,6 +861,60 @@ h2 {
   color: #ffdca8;
 }
 
+.emoji-picker {
+  display: grid;
+  gap: 0.75rem;
+  padding: 0.8rem 0.9rem;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.emoji-picker-search {
+  width: 100%;
+}
+
+.emoji-picker-tabs {
+  display: flex;
+  gap: 0.45rem;
+  flex-wrap: wrap;
+}
+
+.emoji-picker-tab {
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 999px;
+  padding: 0.4rem 0.7rem;
+  background: rgba(255, 255, 255, 0.05);
+  color: inherit;
+  font-size: 0.85rem;
+}
+
+.emoji-picker-tab.is-active {
+  border-color: rgba(246, 190, 109, 0.35);
+  background: rgba(246, 190, 109, 0.14);
+  color: #ffdca8;
+}
+
+.emoji-picker-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(42px, 1fr));
+  gap: 0.5rem;
+}
+
+.emoji-picker-button {
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 14px;
+  padding: 0.5rem;
+  background: rgba(255, 255, 255, 0.05);
+  color: inherit;
+  font-size: 1.25rem;
+  line-height: 1;
+}
+
+.emoji-picker-empty {
+  margin: 0;
+  color: rgba(244, 239, 228, 0.58);
+}
+
 .composer-context-banner {
   display: flex;
   justify-content: space-between;

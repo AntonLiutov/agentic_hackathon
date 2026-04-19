@@ -4,7 +4,7 @@ Classic web chat platform built for the AI Herders Jam requirements.
 
 ## Current Status
 
-Sprint 1 is complete and Sprint 2 is complete. The repository now includes:
+Sprint 1, Sprint 2, and Sprint 3 are complete. Sprint 4 is in progress. The repository now includes:
 
 - planning and architecture docs
 - backend and frontend application skeletons
@@ -47,6 +47,9 @@ Sprint 1 is complete and Sprint 2 is complete. The repository now includes:
 - DM attachment access limited to actual DM participants
 - account deletion with owned-room cleanup, room-membership removal, and preserved frozen DM history for surviving participants
 - permanent attachment file cleanup for deleted owned rooms
+- requirements audit in `docs/requirements-audit.md`
+- composer emoji picker with search, categories, and recent emoji
+- active room and DM resync after websocket reconnect
 
 ## Repository Structure
 
@@ -186,7 +189,7 @@ Stop the stack:
 docker compose down
 ```
 
-## Sprint 1 Task Coverage
+## Implemented Task Coverage
 
 This repository currently targets:
 
@@ -212,5 +215,6 @@ This repository currently targets:
 - `SP3-05 Attachments`
 - `SP3-06 Attachment Authorization`
 - `SP3-07 Account Deletion`
+- `SP4-02 Reliability and Edge Cases`
 
-Sprint 3 is complete. The next implementation step is Sprint 4 hardening, polish, and submission readiness.
+Sprint 3 is complete. Sprint 4 is underway with reliability hardening completed first, followed by validation, performance/demo-data work, UI polish, and submission readiness.

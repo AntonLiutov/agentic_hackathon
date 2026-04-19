@@ -11,6 +11,7 @@ type UseConversationRealtimeOptions = {
   onMessageCreated: (message: ConversationMessage, sequenceHead: number | null) => void;
   onMessageUpdated: (message: ConversationMessage) => void;
   onMessageDeleted: (message: ConversationMessage) => void;
+  onConnected?: (sequenceHead: number | null) => void;
 };
 
 type RealtimeEnvelope =
@@ -40,6 +41,7 @@ export function useConversationRealtime({
   onMessageCreated,
   onMessageUpdated,
   onMessageDeleted,
+  onConnected,
 }: UseConversationRealtimeOptions) {
   const [status, setStatus] = useState<RealtimeStatus>("idle");
   const reconnectTimeoutRef = useRef<number | null>(null);
@@ -49,6 +51,7 @@ export function useConversationRealtime({
     onMessageCreated,
     onMessageUpdated,
     onMessageDeleted,
+    onConnected,
   });
 
   useEffect(() => {
@@ -56,8 +59,9 @@ export function useConversationRealtime({
       onMessageCreated,
       onMessageUpdated,
       onMessageDeleted,
+      onConnected,
     };
-  }, [onMessageCreated, onMessageDeleted, onMessageUpdated]);
+  }, [onConnected, onMessageCreated, onMessageDeleted, onMessageUpdated]);
 
   useEffect(() => {
     if (!enabled || !conversationId || typeof WebSocket === "undefined") {
@@ -92,6 +96,11 @@ export function useConversationRealtime({
 
       socket.onmessage = (event) => {
         const payload = JSON.parse(event.data) as RealtimeEnvelope;
+
+        if (payload.type === "conversation.subscribed") {
+          handlersRef.current.onConnected?.(payload.sequence_head);
+          return;
+        }
 
         if (payload.type === "message.created") {
           handlersRef.current.onMessageCreated(payload.message, payload.sequence_head ?? null);
