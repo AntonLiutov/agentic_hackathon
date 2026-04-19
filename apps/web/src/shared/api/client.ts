@@ -140,17 +140,24 @@ function buildUrl(path: string, query?: RequestOptions["query"]) {
   return url.toString();
 }
 
+export function buildApiUrl(path: string) {
+  return buildUrl(path);
+}
+
 export async function apiRequest<T>(path: string, options: RequestOptions = {}): Promise<T> {
   let response: Response;
+  const isFormData = typeof FormData !== "undefined" && options.body instanceof FormData;
+  const headers = new Headers(options.headers ?? {});
+
+  if (!isFormData && !headers.has("Content-Type")) {
+    headers.set("Content-Type", "application/json");
+  }
 
   try {
     response = await fetch(buildUrl(path, options.query), {
       credentials: "include",
       ...options,
-      headers: {
-        "Content-Type": "application/json",
-        ...(options.headers ?? {}),
-      },
+      headers,
     });
   } catch {
     throw new ApiError("Network request failed.", 0);

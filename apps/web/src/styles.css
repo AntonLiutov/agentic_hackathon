@@ -763,6 +763,56 @@ h2 {
   font-style: italic;
 }
 
+.message-attachments {
+  display: grid;
+  gap: 0.8rem;
+  margin-top: 0.9rem;
+}
+
+.message-attachment-card {
+  display: grid;
+  gap: 0.7rem;
+  padding: 0.85rem;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.message-attachment-preview {
+  width: min(100%, 360px);
+  max-height: 280px;
+  object-fit: cover;
+  border-radius: 16px;
+}
+
+.message-attachment-summary {
+  display: grid;
+  gap: 0.22rem;
+  min-width: 0;
+}
+
+.message-attachment-name {
+  overflow-wrap: anywhere;
+}
+
+.message-attachment-meta small {
+  color: rgba(244, 239, 228, 0.62);
+}
+
+.message-attachment-meta {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 0.9rem;
+  flex-wrap: wrap;
+}
+
+.message-attachment-meta p {
+  margin: 0.35rem 0 0;
+  color: rgba(244, 239, 228, 0.78);
+  white-space: pre-wrap;
+}
+
 .message-reply-reference {
   margin-bottom: 0.75rem;
   padding: 0.75rem 0.9rem;
@@ -819,6 +869,66 @@ h2 {
   padding: 0.75rem 0.9rem;
   border-radius: 16px;
   background: rgba(255, 255, 255, 0.05);
+}
+
+.composer-feedback {
+  margin: 0;
+  padding: 0.8rem 0.95rem;
+  border-radius: 14px;
+}
+
+.composer-feedback--error {
+  background: rgba(219, 83, 117, 0.14);
+  border: 1px solid rgba(219, 83, 117, 0.28);
+  color: #ffd3df;
+}
+
+.composer-attachments {
+  display: grid;
+  gap: 0.75rem;
+  padding: 0.85rem 0.9rem;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.composer-attachments-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+  align-items: center;
+  color: rgba(244, 239, 228, 0.7);
+}
+
+.composer-attachment-list {
+  display: grid;
+  gap: 0.65rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.composer-attachment-item {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.8rem;
+  align-items: center;
+  flex-wrap: wrap;
+  padding: 0.75rem 0.8rem;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.composer-attachment-item small {
+  display: block;
+  margin-top: 0.2rem;
+  color: rgba(244, 239, 228, 0.62);
+}
+
+.ghost-button--link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
 }
 
 .feature-list li {

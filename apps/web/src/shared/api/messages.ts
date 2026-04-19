@@ -1,10 +1,21 @@
-import { apiRequest } from "./client";
+import { apiRequest, buildApiUrl } from "./client";
 
 export type MessageReplyReference = {
   id: number;
   author_username: string;
   body_text: string | null;
   deleted_at: string | null;
+};
+
+export type MessageAttachment = {
+  id: string;
+  original_filename: string;
+  media_type: string | null;
+  size_bytes: number;
+  comment_text: string | null;
+  content_path: string;
+  download_path: string;
+  is_image: boolean;
 };
 
 export type ConversationMessage = {
@@ -23,6 +34,7 @@ export type ConversationMessage = {
   is_deleted: boolean;
   can_edit: boolean;
   can_delete: boolean;
+  attachments: MessageAttachment[];
 };
 
 export type ConversationMessageListResponse = {
@@ -46,9 +58,20 @@ export type CreateMessagePayload = {
   reply_to_message_id?: number;
 };
 
+export type CreateAttachmentMessagePayload = {
+  body_text?: string;
+  reply_to_message_id?: number;
+  attachment_comment?: string;
+  files: File[];
+};
+
 export type EditMessagePayload = {
   body_text: string;
 };
+
+export function getAttachmentAssetUrl(path: string) {
+  return buildApiUrl(path);
+}
 
 export const messagesApi = {
   list(conversationId: string, limit = 50, beforeSequence?: number) {
@@ -65,6 +88,33 @@ export const messagesApi = {
       {
         method: "POST",
         body: JSON.stringify(payload),
+      },
+    );
+  },
+  createWithAttachments(conversationId: string, payload: CreateAttachmentMessagePayload) {
+    const formData = new FormData();
+
+    if (payload.body_text !== undefined) {
+      formData.append("body_text", payload.body_text);
+    }
+
+    if (payload.reply_to_message_id !== undefined) {
+      formData.append("reply_to_message_id", String(payload.reply_to_message_id));
+    }
+
+    if (payload.attachment_comment !== undefined) {
+      formData.append("attachment_comment", payload.attachment_comment);
+    }
+
+    for (const file of payload.files) {
+      formData.append("files", file);
+    }
+
+    return apiRequest<ConversationMessage>(
+      `/api/conversations/${conversationId}/messages/attachments`,
+      {
+        method: "POST",
+        body: formData,
       },
     );
   },

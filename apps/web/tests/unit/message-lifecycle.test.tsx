@@ -380,6 +380,232 @@ describe("Message lifecycle", () => {
     });
   });
 
+  it("uploads and renders room attachments from the composer", async () => {
+    let messages = [
+      {
+        id: 1,
+        conversation_id: "room-engineering",
+        author_user_id: "user-1",
+        author_username: "Preview User",
+        sequence_number: 1,
+        body_text: "Existing text message",
+        reply_to_message_id: null,
+        reply_to_message: null,
+        created_at: "2026-04-18T09:00:00Z",
+        edited_at: null,
+        deleted_at: null,
+        is_edited: false,
+        is_deleted: false,
+        can_edit: true,
+        can_delete: true,
+        attachments: [],
+      },
+    ];
+    let sequenceHead = 1;
+
+    fetchMock.mockImplementation(async (input, init) => {
+      const url = typeof input === "string" ? input : input.toString();
+
+      if (url.endsWith("/api/auth/me")) {
+        return new Response(
+          JSON.stringify({
+            user: {
+              id: "user-1",
+              username: "Preview User",
+              email: "preview@agentic.chat",
+            },
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        );
+      }
+
+      if (url.includes("/api/rooms/mine") || url.includes("/api/rooms/public")) {
+        return new Response(
+          JSON.stringify({
+            rooms: [
+              {
+                id: "room-engineering",
+                name: "engineering-room",
+                description: "Coordination room for the main launch.",
+                visibility: "public",
+                owner_user_id: "user-1",
+                member_count: 1,
+                is_member: true,
+                is_owner: true,
+                is_admin: true,
+                is_banned: false,
+                can_join: false,
+                can_leave: false,
+                can_manage_members: true,
+                joined_at: "2026-04-18T08:00:00Z",
+              },
+            ],
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        );
+      }
+
+      if (url.endsWith("/api/rooms/invitations/mine")) {
+        return new Response(JSON.stringify({ invitations: [] }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      if (url.endsWith("/api/rooms/room-engineering/members")) {
+        return new Response(
+          JSON.stringify({
+            members: [
+              {
+                id: "user-1",
+                username: "Preview User",
+                joined_at: "2026-04-18T08:00:00Z",
+                is_owner: true,
+                is_admin: true,
+                can_remove: false,
+                friendship_state: "self",
+                presence_status: "online",
+              },
+            ],
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        );
+      }
+
+      if (url.endsWith("/api/rooms/room-engineering/bans")) {
+        return new Response(JSON.stringify({ bans: [] }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      if (url.includes("/api/conversations/room-engineering/messages") && (!init?.method || init.method === "GET")) {
+        return new Response(
+          JSON.stringify({
+            conversation_id: "room-engineering",
+            sequence_head: sequenceHead,
+            oldest_loaded_sequence: messages[0]?.sequence_number ?? null,
+            newest_loaded_sequence: messages[messages.length - 1]?.sequence_number ?? null,
+            next_before_sequence: null,
+            has_older: false,
+            messages,
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        );
+      }
+
+      if (
+        url.endsWith("/api/conversations/room-engineering/messages/attachments") &&
+        init?.method === "POST"
+      ) {
+        expect(init.body).toBeInstanceOf(FormData);
+        const formData = init.body as FormData;
+        expect(formData.get("attachment_comment")).toBe("UI mock attachment");
+        const uploadedFile = formData.get("files");
+        expect(uploadedFile).toBeInstanceOf(File);
+        expect((uploadedFile as File).name).toBe("diagram.png");
+
+        sequenceHead += 1;
+        const createdMessage = {
+          id: 2,
+          conversation_id: "room-engineering",
+          author_user_id: "user-1",
+          author_username: "Preview User",
+          sequence_number: sequenceHead,
+          body_text: "Attachment launch note",
+          reply_to_message_id: null,
+          reply_to_message: null,
+          created_at: "2026-04-18T09:10:00Z",
+          edited_at: null,
+          deleted_at: null,
+          is_edited: false,
+          is_deleted: false,
+          can_edit: true,
+          can_delete: true,
+          attachments: [
+            {
+              id: "attachment-1",
+              original_filename: "diagram.png",
+              media_type: "image/png",
+              size_bytes: 2048,
+              comment_text: "UI mock attachment",
+              content_path: "/api/attachments/attachment-1",
+              download_path: "/api/attachments/attachment-1?download=1",
+              is_image: true,
+            },
+          ],
+        };
+        messages = [...messages, createdMessage];
+
+        return new Response(JSON.stringify(createdMessage), {
+          status: 201,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      if (url.endsWith("/api/dms/mine")) {
+        return new Response(JSON.stringify({ direct_messages: [] }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      if (url.endsWith("/api/friends")) {
+        return new Response(JSON.stringify({ friends: [] }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      if (url.endsWith("/api/friends/requests")) {
+        return new Response(
+          JSON.stringify({
+            incoming_requests: [],
+            outgoing_requests: [],
+          }),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          },
+        );
+      }
+
+      return new Response(JSON.stringify({ detail: "Unhandled request in test." }), {
+        status: 500,
+        headers: { "Content-Type": "application/json" },
+      });
+    });
+
+    renderRoutes(["/app/chats"]);
+
+    await waitFor(() => {
+      expect(screen.getByText("Existing text message")).toBeInTheDocument();
+    });
+
+    const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement;
+    const file = new File(["diagram"], "diagram.png", { type: "image/png" });
+    fireEvent.change(fileInput, { target: { files: [file] } });
+
+    await waitFor(() => {
+      expect(screen.getByText("diagram.png")).toBeInTheDocument();
+    });
+
+    fireEvent.change(screen.getByPlaceholderText("Optional attachment comment"), {
+      target: { value: "UI mock attachment" },
+    });
+    fireEvent.change(screen.getByPlaceholderText("Write a message"), {
+      target: { value: "Attachment launch note" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+
+    await waitFor(() => {
+      expect(screen.getByText("Attachment launch note")).toBeInTheDocument();
+      expect(screen.getAllByText("diagram.png").length).toBeGreaterThan(0);
+      expect(screen.getByText("UI mock attachment")).toBeInTheDocument();
+      expect(screen.getByRole("link", { name: "Download" })).toBeInTheDocument();
+    });
+  });
+
   it("supports direct-message send flow on the shared conversation model", async () => {
     let directMessages = [
       {
@@ -534,6 +760,210 @@ describe("Message lifecycle", () => {
     await waitFor(() => {
       expect(screen.getByText("Replying from the DM composer")).toBeInTheDocument();
       expect(screen.getByText("sequence 2")).toBeInTheDocument();
+    });
+  });
+
+  it("uploads and renders direct-message attachments from the composer", async () => {
+    let directMessages = [
+      {
+        id: "dm-preview",
+        counterpart_user_id: "user-2",
+        counterpart_username: "existing.friend",
+        status: "active",
+        created_at: "2026-04-18T09:00:00Z",
+        is_initiator: false,
+        can_message: true,
+      },
+    ];
+    let messages = [
+      {
+        id: 1,
+        conversation_id: "dm-preview",
+        author_user_id: "user-2",
+        author_username: "existing.friend",
+        sequence_number: 1,
+        body_text: "Hello from your friend",
+        reply_to_message_id: null,
+        reply_to_message: null,
+        created_at: "2026-04-18T09:00:00Z",
+        edited_at: null,
+        deleted_at: null,
+        is_edited: false,
+        is_deleted: false,
+        can_edit: false,
+        can_delete: false,
+        attachments: [],
+      },
+    ];
+    let sequenceHead = 1;
+
+    fetchMock.mockImplementation(async (input, init) => {
+      const url = typeof input === "string" ? input : input.toString();
+
+      if (url.endsWith("/api/auth/me")) {
+        return new Response(
+          JSON.stringify({
+            user: {
+              id: "user-1",
+              username: "Preview User",
+              email: "preview@agentic.chat",
+            },
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        );
+      }
+
+      if (url.includes("/api/rooms/mine") || url.includes("/api/rooms/public")) {
+        return new Response(JSON.stringify({ rooms: [] }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      if (url.endsWith("/api/rooms/invitations/mine")) {
+        return new Response(JSON.stringify({ invitations: [] }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      if (url.endsWith("/api/dms/mine")) {
+        return new Response(JSON.stringify({ direct_messages: directMessages }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      if (url.endsWith("/api/friends")) {
+        return new Response(
+          JSON.stringify({
+            friends: [
+              {
+                user_id: "user-2",
+                username: "existing.friend",
+                presence_status: "online",
+                created_at: "2026-04-18T08:50:00Z",
+              },
+            ],
+          }),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          },
+        );
+      }
+
+      if (url.endsWith("/api/friends/requests")) {
+        return new Response(
+          JSON.stringify({
+            incoming_requests: [],
+            outgoing_requests: [],
+          }),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          },
+        );
+      }
+
+      if (url.includes("/api/conversations/dm-preview/messages") && (!init?.method || init.method === "GET")) {
+        return new Response(
+          JSON.stringify({
+            conversation_id: "dm-preview",
+            sequence_head: sequenceHead,
+            oldest_loaded_sequence: messages[0]?.sequence_number ?? null,
+            newest_loaded_sequence: messages[messages.length - 1]?.sequence_number ?? null,
+            next_before_sequence: null,
+            has_older: false,
+            messages,
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        );
+      }
+
+      if (
+        url.endsWith("/api/conversations/dm-preview/messages/attachments") &&
+        init?.method === "POST"
+      ) {
+        expect(init.body).toBeInstanceOf(FormData);
+        const formData = init.body as FormData;
+        expect(formData.get("attachment_comment")).toBe("Private handoff");
+        const uploadedFile = formData.get("files");
+        expect(uploadedFile).toBeInstanceOf(File);
+        expect((uploadedFile as File).name).toBe("handoff.pdf");
+
+        sequenceHead += 1;
+        const createdMessage = {
+          id: 2,
+          conversation_id: "dm-preview",
+          author_user_id: "user-1",
+          author_username: "Preview User",
+          sequence_number: sequenceHead,
+          body_text: "DM attachment note",
+          reply_to_message_id: null,
+          reply_to_message: null,
+          created_at: "2026-04-18T09:02:00Z",
+          edited_at: null,
+          deleted_at: null,
+          is_edited: false,
+          is_deleted: false,
+          can_edit: true,
+          can_delete: true,
+          attachments: [
+            {
+              id: "attachment-dm-1",
+              original_filename: "handoff.pdf",
+              media_type: "application/pdf",
+              size_bytes: 2048,
+              comment_text: "Private handoff",
+              content_path: "/api/attachments/attachment-dm-1",
+              download_path: "/api/attachments/attachment-dm-1?download=1",
+              is_image: false,
+            },
+          ],
+        };
+        messages = [...messages, createdMessage];
+
+        return new Response(JSON.stringify(createdMessage), {
+          status: 201,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      return new Response(JSON.stringify({ detail: "Unhandled request in test." }), {
+        status: 500,
+        headers: { "Content-Type": "application/json" },
+      });
+    });
+
+    renderRoutes(["/app/contacts"]);
+
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { name: "existing.friend" })).toBeInTheDocument();
+      expect(screen.getByText("Hello from your friend")).toBeInTheDocument();
+    });
+
+    const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement;
+    const file = new File(["handoff"], "handoff.pdf", { type: "application/pdf" });
+    fireEvent.change(fileInput, { target: { files: [file] } });
+
+    await waitFor(() => {
+      expect(screen.getByText("handoff.pdf")).toBeInTheDocument();
+    });
+
+    fireEvent.change(screen.getByPlaceholderText("Optional attachment comment"), {
+      target: { value: "Private handoff" },
+    });
+    fireEvent.change(screen.getByPlaceholderText("Write a direct message"), {
+      target: { value: "DM attachment note" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+
+    await waitFor(() => {
+      expect(screen.getByText("DM attachment note")).toBeInTheDocument();
+      expect(screen.getAllByText("handoff.pdf").length).toBeGreaterThan(0);
+      expect(screen.getByText("Private handoff")).toBeInTheDocument();
+      expect(screen.getByRole("link", { name: "Download" })).toBeInTheDocument();
     });
   });
 

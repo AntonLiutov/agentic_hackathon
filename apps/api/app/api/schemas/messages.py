@@ -22,6 +22,17 @@ class MessageReplyReferenceResponse(BaseModel):
     deleted_at: datetime | None
 
 
+class MessageAttachmentResponse(BaseModel):
+    id: UUID
+    original_filename: str
+    media_type: str | None
+    size_bytes: int
+    comment_text: str | None
+    content_path: str
+    download_path: str
+    is_image: bool
+
+
 class ConversationMessageResponse(BaseModel):
     id: int
     conversation_id: UUID
@@ -38,6 +49,7 @@ class ConversationMessageResponse(BaseModel):
     is_deleted: bool
     can_edit: bool
     can_delete: bool
+    attachments: list[MessageAttachmentResponse]
 
 
 class ConversationMessageListResponse(BaseModel):

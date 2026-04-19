@@ -972,6 +972,229 @@ describe("App routes", () => {
     });
   });
 
+  it("refreshes room message moderation controls when a user becomes an admin", async () => {
+    let myRooms = [
+      {
+        id: "room-engineering",
+        name: "engineering-room",
+        description: "Coordination room for the main launch.",
+        visibility: "public",
+        owner_user_id: "user-2",
+        member_count: 2,
+        is_member: true,
+        is_owner: false,
+        is_admin: false,
+        is_banned: false,
+        can_join: false,
+        can_leave: true,
+        can_manage_members: false,
+        joined_at: "2026-04-18T08:00:00Z",
+      },
+    ];
+    let publicRooms = [...myRooms];
+    let members = [
+      {
+        id: "user-1",
+        username: "Preview User",
+        joined_at: "2026-04-18T08:00:00Z",
+        is_owner: false,
+        is_admin: false,
+        can_remove: false,
+      },
+      {
+        id: "user-2",
+        username: "room.owner",
+        joined_at: "2026-04-18T07:55:00Z",
+        is_owner: true,
+        is_admin: true,
+        can_remove: false,
+      },
+    ];
+    let messages = [
+      {
+        id: 1,
+        conversation_id: "room-engineering",
+        author_user_id: "user-2",
+        author_username: "room.owner",
+        sequence_number: 1,
+        body_text: "Owner message that admins may moderate",
+        reply_to_message_id: null,
+        reply_to_message: null,
+        created_at: "2026-04-18T09:00:00Z",
+        edited_at: null,
+        deleted_at: null,
+        is_edited: false,
+        is_deleted: false,
+        can_edit: false,
+        can_delete: false,
+        attachments: [],
+      },
+    ];
+
+    fetchMock.mockImplementation(async (input, init) => {
+      const url = typeof input === "string" ? input : input.toString();
+
+      if (url.endsWith("/api/auth/me")) {
+        return new Response(
+          JSON.stringify({
+            user: {
+              id: "user-1",
+              username: "Preview User",
+              email: "preview@agentic.chat",
+            },
+          }),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          },
+        );
+      }
+
+      if (url.includes("/api/rooms/mine")) {
+        return new Response(JSON.stringify({ rooms: myRooms }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      if (url.includes("/api/rooms/public")) {
+        return new Response(JSON.stringify({ rooms: publicRooms }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      if (url.endsWith("/api/rooms/invitations/mine")) {
+        return new Response(JSON.stringify({ invitations: [] }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      if (url.endsWith("/api/rooms/room-engineering/members")) {
+        return new Response(JSON.stringify({ members }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      if (url.endsWith("/api/rooms/room-engineering/bans")) {
+        return new Response(JSON.stringify({ bans: [] }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      if (
+        url.includes("/api/conversations/room-engineering/messages") &&
+        (!init?.method || init.method === "GET")
+      ) {
+        return new Response(
+          JSON.stringify({
+            conversation_id: "room-engineering",
+            sequence_head: 1,
+            oldest_loaded_sequence: 1,
+            newest_loaded_sequence: 1,
+            next_before_sequence: null,
+            has_older: false,
+            messages,
+          }),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          },
+        );
+      }
+
+      if (url.endsWith("/api/conversations/room-engineering/read") && init?.method === "POST") {
+        return new Response(
+          JSON.stringify({
+            conversation_id: "room-engineering",
+            last_read_sequence_number: 1,
+            unread_count: 0,
+          }),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          },
+        );
+      }
+
+      if (url.endsWith("/api/dms/mine")) {
+        return new Response(JSON.stringify({ direct_messages: [] }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      if (url.endsWith("/api/friends")) {
+        return new Response(JSON.stringify({ friends: [] }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      if (url.endsWith("/api/friends/requests")) {
+        return new Response(
+          JSON.stringify({
+            incoming_requests: [],
+            outgoing_requests: [],
+          }),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          },
+        );
+      }
+
+      return new Response(JSON.stringify({ detail: "Unhandled request in test." }), {
+        status: 500,
+        headers: { "Content-Type": "application/json" },
+      });
+    });
+
+    renderRoutes(["/app/chats"]);
+
+    await waitFor(() => {
+      expect(screen.getByText("Owner message that admins may moderate")).toBeInTheDocument();
+    });
+    expect(screen.queryByRole("button", { name: "Delete" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Manage room" })).not.toBeInTheDocument();
+
+    myRooms = [
+      {
+        ...myRooms[0],
+        is_admin: true,
+        can_manage_members: true,
+      },
+    ];
+    publicRooms = [...myRooms];
+    members = [
+      {
+        ...members[0],
+        is_admin: true,
+      },
+      members[1],
+    ];
+    messages = [
+      {
+        ...messages[0],
+        can_delete: true,
+      },
+    ];
+
+    await act(async () => {
+      MockWebSocket.instances.find((socket) => socket.url.endsWith("/ws/inbox"))?.emit({
+        type: "rooms.updated",
+      });
+    });
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Delete" })).toBeInTheDocument();
+      expect(screen.getAllByRole("button", { name: "Manage room" }).length).toBeGreaterThan(0);
+    });
+  });
+
   it("updates the owner room view live when an invitation is accepted", async () => {
     let myRooms = [
       {

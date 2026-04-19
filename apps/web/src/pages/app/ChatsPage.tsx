@@ -1,5 +1,7 @@
 import {
   useCallback,
+  type ChangeEvent,
+  type ClipboardEvent,
   type FormEvent,
   type UIEvent,
   useEffect,
@@ -14,6 +16,7 @@ import { usePresence } from "../../features/presence/use-presence";
 import { useSession } from "../../features/session/use-session";
 import { ApiError, getApiErrorMessage } from "../../shared/api/client";
 import {
+  getAttachmentAssetUrl,
   messagesApi,
   type ConversationMessage,
 } from "../../shared/api/messages";
@@ -50,7 +53,34 @@ function formatPresenceLabel(presenceStatus: "online" | "afk" | "offline") {
   return presenceStatus === "afk" ? "AFK" : presenceStatus;
 }
 
+function formatAttachmentSize(sizeBytes: number) {
+  if (sizeBytes < 1024) {
+    return `${sizeBytes} B`;
+  }
+
+  if (sizeBytes < 1024 * 1024) {
+    return `${(sizeBytes / 1024).toFixed(1)} KB`;
+  }
+
+  return `${(sizeBytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+const MAX_IMAGE_BYTES = 2 * 1024 * 1024;
+const MAX_FILE_BYTES = 20 * 1024 * 1024;
 const MESSAGE_PAGE_SIZE = 30;
+
+function getAttachmentValidationError(file: File) {
+  const isImage = file.type.startsWith("image/");
+  const sizeLimit = isImage ? MAX_IMAGE_BYTES : MAX_FILE_BYTES;
+
+  if (file.size > sizeLimit) {
+    return `${file.name} is too large. ${
+      isImage ? "Images must be 3 MB or smaller." : "Files must be 20 MB or smaller."
+    }`;
+  }
+
+  return null;
+}
 
 function upsertConversationMessage(
   currentMessages: ConversationMessage[],
@@ -108,7 +138,11 @@ export function ChatsPage() {
   const [demotingAdminId, setDemotingAdminId] = useState<string | null>(null);
   const [unbanningUserId, setUnbanningUserId] = useState<string | null>(null);
   const [isDeletingRoom, setIsDeletingRoom] = useState(false);
+  const [pendingFiles, setPendingFiles] = useState<File[]>([]);
+  const [attachmentComment, setAttachmentComment] = useState("");
+  const [composerError, setComposerError] = useState<string | null>(null);
   const messageListRef = useRef<HTMLDivElement | null>(null);
+  const attachmentInputRef = useRef<HTMLInputElement | null>(null);
   const shouldAutoScrollRef = useRef(false);
   const pendingScrollRestoreRef = useRef<{ previousHeight: number; previousTop: number } | null>(
     null,
@@ -291,6 +325,7 @@ export function ChatsPage() {
       }
 
       try {
+        await loadLatestMessages(selectedRoom.id);
         await syncRoomPeopleState(selectedRoom.id, selectedRoom.can_manage_members);
 
         if (isManageModalOpen && selectedRoom.can_manage_members) {
@@ -317,6 +352,7 @@ export function ChatsPage() {
     };
   }, [
     isManageModalOpen,
+    loadLatestMessages,
     refreshRooms,
     selectedRoom?.can_manage_members,
     selectedRoom?.id,
@@ -427,10 +463,76 @@ export function ChatsPage() {
     }
   }
 
+  function addPendingFiles(nextFiles: File[]) {
+    const validationError = nextFiles
+      .map((file) => getAttachmentValidationError(file))
+      .find((errorMessage) => errorMessage !== null);
+
+    if (validationError) {
+      setComposerError(validationError);
+    } else {
+      setComposerError(null);
+    }
+
+    setPendingFiles((currentFiles) => {
+      const seen = new Set(currentFiles.map((file) => `${file.name}:${file.size}:${file.lastModified}`));
+      const uniqueFiles = nextFiles.filter((file) => {
+        if (getAttachmentValidationError(file)) {
+          return false;
+        }
+        const key = `${file.name}:${file.size}:${file.lastModified}`;
+        if (seen.has(key)) {
+          return false;
+        }
+        seen.add(key);
+        return true;
+      });
+      return [...currentFiles, ...uniqueFiles];
+    });
+  }
+
+  function handleAttachmentSelection(event: ChangeEvent<HTMLInputElement>) {
+    const nextFiles = Array.from(event.target.files ?? []);
+    if (nextFiles.length > 0) {
+      addPendingFiles(nextFiles);
+    }
+    event.target.value = "";
+  }
+
+  function handleComposerPaste(event: ClipboardEvent<HTMLTextAreaElement>) {
+    if (editingMessageId !== null) {
+      return;
+    }
+
+    const clipboardFiles = Array.from(event.clipboardData.files ?? []);
+    if (clipboardFiles.length === 0) {
+      return;
+    }
+
+    event.preventDefault();
+    addPendingFiles(clipboardFiles);
+  }
+
+  function removePendingFile(fileToRemove: File) {
+    setPendingFiles((currentFiles) =>
+      currentFiles.filter(
+        (file) =>
+          !(
+            file.name === fileToRemove.name &&
+            file.size === fileToRemove.size &&
+            file.lastModified === fileToRemove.lastModified
+          ),
+      ),
+    );
+  }
+
   function resetComposerState() {
     setComposeText("");
     setReplyTarget(null);
     setEditingMessageId(null);
+    setPendingFiles([]);
+    setAttachmentComment("");
+    setComposerError(null);
   }
 
   async function handleInvite(event: FormEvent<HTMLFormElement>) {
@@ -652,18 +754,30 @@ export function ChatsPage() {
   async function handleSubmitMessage(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
-    if (!selectedRoom || !composeText.trim()) {
+    if (!selectedRoom) {
+      return;
+    }
+
+    const normalizedBodyText = composeText.trim();
+    const hasAttachments = pendingFiles.length > 0;
+
+    if (editingMessageId !== null && !normalizedBodyText) {
+      return;
+    }
+
+    if (editingMessageId === null && !normalizedBodyText && !hasAttachments) {
       return;
     }
 
     setPanelError(null);
     setPanelNotice(null);
     setIsSubmittingMessage(true);
+    setComposerError(null);
 
     try {
       if (editingMessageId !== null) {
         const updatedMessage = await messagesApi.edit(editingMessageId, {
-          body_text: composeText,
+          body_text: normalizedBodyText,
         });
         setMessages((currentMessages) =>
           upsertConversationMessage(currentMessages, updatedMessage),
@@ -671,10 +785,17 @@ export function ChatsPage() {
         setPanelNotice("Message updated.");
       } else {
         shouldAutoScrollRef.current = isNearBottom();
-        const createdMessage = await messagesApi.create(selectedRoom.id, {
-          body_text: composeText,
-          reply_to_message_id: replyTarget?.id,
-        });
+        const createdMessage = hasAttachments
+          ? await messagesApi.createWithAttachments(selectedRoom.id, {
+              body_text: normalizedBodyText || undefined,
+              reply_to_message_id: replyTarget?.id,
+              attachment_comment: attachmentComment.trim() || undefined,
+              files: pendingFiles,
+            })
+          : await messagesApi.create(selectedRoom.id, {
+              body_text: normalizedBodyText,
+              reply_to_message_id: replyTarget?.id,
+            });
         setMessages((currentMessages) =>
           upsertConversationMessage(currentMessages, createdMessage),
         );
@@ -695,6 +816,9 @@ export function ChatsPage() {
     setEditingMessageId(null);
     setReplyTarget(message);
     setComposeText("");
+    setPendingFiles([]);
+    setAttachmentComment("");
+    setComposerError(null);
     setPanelError(null);
     setPanelNotice(null);
   }
@@ -703,6 +827,9 @@ export function ChatsPage() {
     setReplyTarget(null);
     setEditingMessageId(message.id);
     setComposeText(message.body_text ?? "");
+    setPendingFiles([]);
+    setAttachmentComment("");
+    setComposerError(null);
     setPanelError(null);
     setPanelNotice(null);
   }
@@ -1296,6 +1423,39 @@ export function ChatsPage() {
                   <p className={message.is_deleted ? "message-body message-body--deleted" : "message-body"}>
                     {message.is_deleted ? "Message deleted." : message.body_text}
                   </p>
+                  {!message.is_deleted && (message.attachments ?? []).length > 0 ? (
+                    <div className="message-attachments">
+                      {(message.attachments ?? []).map((attachment) => (
+                        <article key={attachment.id} className="message-attachment-card">
+                          {attachment.is_image ? (
+                            <img
+                              className="message-attachment-preview"
+                              src={getAttachmentAssetUrl(attachment.content_path)}
+                              alt={attachment.original_filename}
+                              loading="lazy"
+                            />
+                          ) : null}
+                          <div className="message-attachment-meta">
+                            <div className="message-attachment-summary">
+                              <strong className="message-attachment-name">
+                                {attachment.original_filename}
+                              </strong>
+                              <small>{formatAttachmentSize(attachment.size_bytes)}</small>
+                              {attachment.comment_text ? <p>{attachment.comment_text}</p> : null}
+                            </div>
+                            <a
+                              className="ghost-button ghost-button--link"
+                              href={getAttachmentAssetUrl(attachment.download_path)}
+                              target="_blank"
+                              rel="noreferrer"
+                            >
+                              Download
+                            </a>
+                          </div>
+                        </article>
+                      ))}
+                    </div>
+                  ) : null}
                   {!message.is_deleted ? (
                     <div className="message-actions">
                       <button
@@ -1335,14 +1495,28 @@ export function ChatsPage() {
 
           <footer className="composer-shell">
             <form className="composer-form" onSubmit={handleSubmitMessage}>
+              <input
+                ref={attachmentInputRef}
+                type="file"
+                multiple
+                hidden
+                onChange={handleAttachmentSelection}
+              />
               <div className="composer-toolbar">
-                <button type="button">Attach</button>
+                <button
+                  type="button"
+                  disabled={editingMessageId !== null}
+                  onClick={() => attachmentInputRef.current?.click()}
+                >
+                  Attach
+                </button>
                 <span>
                   {editingMessageId !== null
                     ? "Editing an existing message."
-                    : "Room messages now persist with replies, edits, deletes, and continuity sequence numbers."}
+                    : "Room messages now persist with replies, edits, deletes, attachments, and continuity sequence numbers."}
                 </span>
               </div>
+              {composerError ? <p className="composer-feedback composer-feedback--error">{composerError}</p> : null}
               {replyTarget ? (
                 <div className="composer-context-banner">
                   <span>Replying to {replyTarget.author_username}</span>
@@ -1367,12 +1541,45 @@ export function ChatsPage() {
                   </button>
                 </div>
               ) : null}
+              {pendingFiles.length > 0 ? (
+                <div className="composer-attachments">
+                  <div className="composer-attachments-header">
+                    <strong>Attachments</strong>
+                    <span>{pendingFiles.length} selected</span>
+                  </div>
+                  <ul className="composer-attachment-list">
+                    {pendingFiles.map((file) => (
+                      <li key={`${file.name}:${file.size}:${file.lastModified}`} className="composer-attachment-item">
+                        <div>
+                          <strong>{file.name}</strong>
+                          <small>{formatAttachmentSize(file.size)}</small>
+                        </div>
+                        <button
+                          className="ghost-button"
+                          type="button"
+                          onClick={() => removePendingFile(file)}
+                        >
+                          Remove
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                  <input
+                    type="text"
+                    maxLength={500}
+                    placeholder="Optional attachment comment"
+                    value={attachmentComment}
+                    onChange={(event) => setAttachmentComment(event.target.value)}
+                  />
+                </div>
+              ) : null}
               <textarea
                 rows={4}
                 maxLength={3072}
                 placeholder="Write a message"
                 value={composeText}
                 onChange={(event) => setComposeText(event.target.value)}
+                onPaste={handleComposerPaste}
               />
               <div className="composer-actions">
                 <button className="ghost-button" type="button" onClick={() => resetComposerState()}>

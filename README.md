@@ -135,8 +135,8 @@ Basic checks after startup:
 14. Confirm the accepted private room appears in `Your Rooms` but never in the public catalog.
 15. In a shared room, send a message, reply to it, edit it, and delete it. Confirm the edited indicator and deleted-message state appear correctly.
 16. Remove a member from a room as the room owner/admin and confirm they lose room access.
-17. Open `/app/contacts`, create a direct message by username, and confirm the DM appears in the direct-message list.
-18. Send a message inside the DM, then reply to or edit your own message.
+17. In a room conversation, use `Attach` to upload an image or file, add an optional attachment comment, and confirm the original filename renders in the message.
+18. Download that attachment from the message card and confirm the file content is served by the backend.
 19. In either a room or DM, use `Load older messages` after there is enough history and confirm older messages prepend without yanking the viewport to the bottom.
 20. Open the same shared room in two browsers or one browser plus a private window, send a new message from one side, and confirm it appears on the other side without refresh.
 21. Edit or delete that same message and confirm the other client updates live as well.
@@ -155,15 +155,17 @@ Basic checks after startup:
 34. Open `/app/contacts`, send a friend request by username, and confirm it appears in `Outgoing requests`.
 35. Sign in as the recipient, open `/app/contacts`, and confirm the request appears in `Incoming requests`.
 36. Accept the request and confirm both accounts now see each other in the `Friends` list with presence.
-37. Open a shared room containing a non-friend member, click `Add friend` from the member list, and confirm the request state changes to `Request sent`.
-38. Remove an existing friend from `/app/contacts` and confirm the friendship disappears from both accounts.
-39. Keep the recipient account open on `/app/contacts`, send a friend request from another client, and confirm the incoming request appears without refreshing the page.
-40. Confirm the `Contacts` top navigation shows a badge when there is a pending incoming friend request and no direct-message unread count is currently displayed.
-41. From `/app/contacts`, block an existing friend and confirm the friend disappears from `Friends` and appears under `Blocked users`.
-42. Open an existing DM with that blocked user and confirm the conversation becomes read-only, shows the frozen state, and disables message sending.
-43. Attempt to open a brand-new DM with a blocked user and confirm the UI shows a friendly error instead of opening the conversation.
-44. Unblock the user and confirm they disappear from `Blocked users`.
-45. Confirm unblocking does not automatically restore the friendship, and that the frozen DM stays read-only until friendship is re-established.
+37. From `/app/contacts`, use `Open DM` on a confirmed friend and confirm the DM appears in the direct-message list.
+38. Send a message inside that DM, then attach a file or image there as well and confirm both render in the shared conversation UI.
+39. Open a shared room containing a non-friend member, click `Add friend` from the member list, and confirm the request state changes to `Request sent`.
+40. Remove an existing friend from `/app/contacts` and confirm the friendship disappears from both accounts.
+41. Keep the recipient account open on `/app/contacts`, send a friend request from another client, and confirm the incoming request appears without refreshing the page.
+42. Confirm the `Contacts` top navigation shows a badge when there is a pending incoming friend request and no direct-message unread count is currently displayed.
+43. From `/app/contacts`, block an existing friend and confirm the friend disappears from `Friends` and appears under `Blocked users`.
+44. Open an existing DM with that blocked user and confirm the conversation becomes read-only, shows the frozen state, and disables message sending.
+45. Attempt to open a brand-new DM with a blocked user and confirm the UI shows a friendly error instead of opening the conversation.
+46. Unblock the user and confirm they disappear from `Blocked users`.
+47. Confirm unblocking does not automatically restore the friendship, and that the frozen DM stays read-only until friendship is re-established.
 
 Stop the stack:
 
@@ -194,5 +196,6 @@ This repository currently targets:
 - `SP3-02 User-to-User Bans`
 - `SP3-03 Room Administration`
 - `SP3-04 Room Bans and Access Consistency`
+- `SP3-05 Attachments`
 
-The next implementation step is `SP3-05 Attachments`.
+The next implementation step is `SP3-06 Attachment Authorization`.
