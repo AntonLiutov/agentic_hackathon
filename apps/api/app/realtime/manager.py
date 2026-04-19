@@ -83,6 +83,10 @@ class RealtimeConnectionManager:
                 for registration in self._conversation_connections.get(conversation_id, set())
             }
 
+    async def get_connected_inbox_user_ids(self) -> set[UUID]:
+        async with self._lock:
+            return set(self._user_connections.keys())
+
     async def broadcast_message_event(
         self,
         *,
@@ -210,6 +214,29 @@ class RealtimeConnectionManager:
         for user_id, sockets in stale_sockets_by_user.items():
             for websocket in sockets:
                 await self.disconnect_inbox(user_id, websocket)
+
+    async def broadcast_account_deleted_event(
+        self,
+        *,
+        user_id: UUID,
+    ) -> None:
+        stale_sockets: list[WebSocket] = []
+
+        async with self._lock:
+            sockets = list(self._user_connections.get(user_id, set()))
+
+        payload = {
+            "type": "account.deleted",
+        }
+
+        for websocket in sockets:
+            try:
+                await websocket.send_json(payload)
+            except Exception:
+                stale_sockets.append(websocket)
+
+        for websocket in stale_sockets:
+            await self.disconnect_inbox(user_id, websocket)
 
     async def broadcast_room_event(self) -> None:
         stale_sockets_by_user: dict[UUID, list[WebSocket]] = defaultdict(list)

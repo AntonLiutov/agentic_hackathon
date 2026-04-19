@@ -40,6 +40,10 @@ export function SignInPage() {
       return "Password reset complete. Please sign in with your new password.";
     }
 
+    if (noticeCode === "account-deleted") {
+      return "Account deleted permanently.";
+    }
+
     const storedNotice = window.sessionStorage.getItem("agentic_notice");
 
     if (storedNotice) {

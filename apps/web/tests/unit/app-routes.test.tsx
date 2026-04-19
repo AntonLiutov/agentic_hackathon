@@ -3611,7 +3611,7 @@ describe("App routes", () => {
       expect(screen.getByRole("heading", { name: "Profile and password management" })).toBeInTheDocument();
     });
 
-    fireEvent.change(screen.getByLabelText("Current password"), {
+    fireEvent.change(screen.getAllByLabelText("Current password")[0], {
       target: { value: "correct-horse-battery-staple" },
     });
     fireEvent.change(screen.getByLabelText("New password"), {
@@ -3627,6 +3627,62 @@ describe("App routes", () => {
       expect(
         screen.getByText("Password updated. Please sign in again with your new password."),
       ).toBeInTheDocument();
+    });
+  });
+
+  it("deletes the account from the profile page and returns to sign in", async () => {
+    fetchMock.mockImplementation(async (input, init) => {
+      const url = typeof input === "string" ? input : input.toString();
+
+      if (url.endsWith("/api/auth/me")) {
+        return new Response(
+          JSON.stringify({
+            user: {
+              id: "user-1",
+              username: "Preview User",
+              email: "preview@agentic.chat",
+            },
+          }),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          },
+        );
+      }
+
+      if (url.endsWith("/api/auth/account") && init?.method === "DELETE") {
+        return new Response(
+          JSON.stringify({
+            success: true,
+            message: "Account deleted permanently.",
+          }),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          },
+        );
+      }
+
+      return new Response(JSON.stringify({ detail: "Unhandled request in test." }), {
+        status: 500,
+        headers: { "Content-Type": "application/json" },
+      });
+    });
+
+    renderRoutes(["/app/profile"]);
+
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { name: "Profile and password management" })).toBeInTheDocument();
+    });
+
+    fireEvent.change(screen.getAllByLabelText("Current password")[1], {
+      target: { value: "correct-horse-battery-staple" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Delete account" }));
+
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { name: "Sign in" })).toBeInTheDocument();
+      expect(screen.getByText("Account deleted permanently.")).toBeInTheDocument();
     });
   });
 });

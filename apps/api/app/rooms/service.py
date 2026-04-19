@@ -19,7 +19,12 @@ from app.api.schemas.rooms import (
     RoomMemberResponse,
     RoomSummaryResponse,
 )
+from app.attachments.service import (
+    delete_attachment_files,
+    list_attachment_storage_keys_for_conversations,
+)
 from app.auth.security import normalize_username
+from app.core.config import Settings
 from app.db.models.conversation import (
     Conversation,
     ConversationMember,
@@ -970,6 +975,7 @@ async def delete_room(
     *,
     actor: User,
     room_id: UUID,
+    settings: Settings,
 ) -> ActionResponse:
     access_context = await get_room_access_context(db, room_id=room_id, user=actor)
     require_room_member(access_context)
@@ -987,8 +993,13 @@ async def delete_room(
             detail="Room not found.",
         )
 
+    attachment_storage_keys = await list_attachment_storage_keys_for_conversations(
+        db,
+        conversation_ids=[room_id],
+    )
     await db.delete(conversation)
     await db.commit()
+    delete_attachment_files(settings=settings, storage_keys=attachment_storage_keys)
 
     return ActionResponse(success=True, message="Room deleted permanently.")
 

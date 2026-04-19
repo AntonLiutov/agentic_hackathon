@@ -11,6 +11,7 @@ type UseInboxRealtimeOptions = {
   onPresence?: (userId: string, presenceStatus: PresenceStatus) => void;
   onFriendshipsChanged?: () => void;
   onRoomsChanged?: () => void;
+  onAccountDeleted?: () => void;
   onConnected?: () => void;
 };
 
@@ -35,6 +36,9 @@ type InboxEnvelope =
       type: "rooms.updated";
     }
   | {
+      type: "account.deleted";
+    }
+  | {
       type: "pong";
     };
 
@@ -44,6 +48,7 @@ export function useInboxRealtime({
   onPresence,
   onFriendshipsChanged,
   onRoomsChanged,
+  onAccountDeleted,
   onConnected,
 }: UseInboxRealtimeOptions) {
   const [status, setStatus] = useState<InboxRealtimeStatus>("idle");
@@ -55,6 +60,7 @@ export function useInboxRealtime({
     onPresence,
     onFriendshipsChanged,
     onRoomsChanged,
+    onAccountDeleted,
     onConnected,
   });
 
@@ -64,9 +70,10 @@ export function useInboxRealtime({
       onPresence,
       onFriendshipsChanged,
       onRoomsChanged,
+      onAccountDeleted,
       onConnected,
     };
-  }, [onConnected, onFriendshipsChanged, onPresence, onRoomsChanged, onUnread]);
+  }, [onAccountDeleted, onConnected, onFriendshipsChanged, onPresence, onRoomsChanged, onUnread]);
 
   useEffect(() => {
     if (!enabled || typeof WebSocket === "undefined") {
@@ -122,6 +129,11 @@ export function useInboxRealtime({
 
         if (payload.type === "rooms.updated") {
           handlersRef.current.onRoomsChanged?.();
+          return;
+        }
+
+        if (payload.type === "account.deleted") {
+          handlersRef.current.onAccountDeleted?.();
         }
       };
 

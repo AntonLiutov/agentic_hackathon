@@ -12,7 +12,10 @@ export function ProfilePage() {
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [deleteErrorMessage, setDeleteErrorMessage] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [deletePassword, setDeletePassword] = useState("");
+  const [isDeletingAccount, setIsDeletingAccount] = useState(false);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -42,6 +45,27 @@ export function ProfilePage() {
       setErrorMessage(getApiErrorMessage(error, "Unable to change your password right now."));
     } finally {
       setIsSubmitting(false);
+    }
+  }
+
+  async function handleDeleteAccount(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setDeleteErrorMessage(null);
+    setIsDeletingAccount(true);
+
+    try {
+      const response = await authApi.deleteAccount({
+        current_password: deletePassword,
+      });
+      window.sessionStorage.setItem("agentic_notice", response.message);
+      clearSession();
+      navigate("/signin?notice=account-deleted", {
+        replace: true,
+      });
+    } catch (error) {
+      setDeleteErrorMessage(getApiErrorMessage(error, "Unable to delete your account right now."));
+    } finally {
+      setIsDeletingAccount(false);
     }
   }
 
@@ -115,6 +139,35 @@ export function ProfilePage() {
               {isSubmitting ? "Updating password..." : "Update password"}
             </button>
           </form>
+        </article>
+
+        <article className="session-card">
+          <p className="session-card-kicker">Danger zone</p>
+          <h2>Delete account</h2>
+          <div className="danger-zone">
+            <p>
+              This permanently deletes your account, removes your memberships from other rooms,
+              deletes rooms you own, and permanently removes attachments from those deleted rooms.
+            </p>
+            <form className="auth-form" onSubmit={handleDeleteAccount}>
+              <label>
+                <span>Current password</span>
+                <input
+                  type="password"
+                  placeholder="********"
+                  value={deletePassword}
+                  onChange={(event) => setDeletePassword(event.target.value)}
+                  autoComplete="current-password"
+                  minLength={8}
+                  required
+                />
+              </label>
+              {deleteErrorMessage ? <p className="auth-error">{deleteErrorMessage}</p> : null}
+              <button className="danger-button" type="submit" disabled={isDeletingAccount}>
+                {isDeletingAccount ? "Deleting account..." : "Delete account"}
+              </button>
+            </form>
+          </div>
         </article>
       </div>
     </section>

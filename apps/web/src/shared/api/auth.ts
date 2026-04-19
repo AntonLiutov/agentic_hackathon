@@ -45,6 +45,10 @@ export type ChangePasswordPayload = {
   new_password: string;
 };
 
+export type DeleteAccountPayload = {
+  current_password: string;
+};
+
 export type ForgotPasswordPayload = {
   email: string;
 };
@@ -73,6 +77,11 @@ export const authApi = {
   changePassword: (payload: ChangePasswordPayload) =>
     apiRequest<ActionResponse>("/api/auth/password/change", {
       method: "POST",
+      body: JSON.stringify(payload),
+    }),
+  deleteAccount: (payload: DeleteAccountPayload) =>
+    apiRequest<ActionResponse>("/api/auth/account", {
+      method: "DELETE",
       body: JSON.stringify(payload),
     }),
   requestPasswordReset: (payload: ForgotPasswordPayload) =>

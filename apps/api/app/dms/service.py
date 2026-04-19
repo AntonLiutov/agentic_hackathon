@@ -5,7 +5,7 @@ from datetime import datetime
 from uuid import UUID
 
 from fastapi import HTTPException, status
-from sqlalchemy import and_, func, or_, select
+from sqlalchemy import and_, case, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.schemas.dms import DirectMessageSummaryResponse
@@ -79,9 +79,15 @@ def _dm_projection_query(*, current_user_id: UUID):
             Conversation.message_sequence_head,
             func.coalesce(ConversationRead.last_read_sequence_number, 0),
             DmMetadata.user_one_id,
-            user_one.c.username,
+            case(
+                (user_one.c.deleted_at.is_not(None), "Deleted user"),
+                else_=user_one.c.username,
+            ),
             DmMetadata.user_two_id,
-            user_two.c.username,
+            case(
+                (user_two.c.deleted_at.is_not(None), "Deleted user"),
+                else_=user_two.c.username,
+            ),
         )
         .join(DmMetadata, DmMetadata.conversation_id == Conversation.id)
         .join(

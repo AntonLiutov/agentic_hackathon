@@ -1,12 +1,17 @@
 from __future__ import annotations
 
 import uuid
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
+from uuid import UUID
 
 from fastapi import HTTPException, UploadFile, status
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import Settings
+from app.db.models.message import Attachment, Message, MessageAttachment
 
 IMAGE_MAX_BYTES = 3 * 1024 * 1024
 FILE_MAX_BYTES = 20 * 1024 * 1024
@@ -111,3 +116,26 @@ def delete_attachment_file(*, settings: Settings, storage_key: str) -> None:
     path = get_attachment_path(settings=settings, storage_key=storage_key)
     if path.exists():
         path.unlink(missing_ok=True)
+
+
+def delete_attachment_files(*, settings: Settings, storage_keys: Sequence[str]) -> None:
+    for storage_key in storage_keys:
+        delete_attachment_file(settings=settings, storage_key=storage_key)
+
+
+async def list_attachment_storage_keys_for_conversations(
+    db: AsyncSession,
+    *,
+    conversation_ids: Sequence[UUID],
+) -> list[str]:
+    if not conversation_ids:
+        return []
+
+    query = (
+        select(Attachment.storage_key)
+        .join(MessageAttachment, MessageAttachment.attachment_id == Attachment.id)
+        .join(Message, Message.id == MessageAttachment.message_id)
+        .where(Message.conversation_id.in_(conversation_ids))
+        .distinct()
+    )
+    return list((await db.execute(query)).scalars().all())

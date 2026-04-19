@@ -5,12 +5,13 @@ from uuid import UUID
 from fastapi import APIRouter, Body, Depends, Request, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.dependencies import get_db_session, get_settings_from_request
+from app.api.dependencies import get_db_session, get_realtime_manager, get_settings_from_request
 from app.api.schemas.auth import (
     ActionResponse,
     AuthSessionResponse,
     AuthUserResponse,
     ChangePasswordRequest,
+    DeleteAccountRequest,
     ForgotPasswordRequest,
     LoginRequest,
     LogoutResponse,
@@ -23,6 +24,7 @@ from app.auth.service import (
     attach_session_cookie,
     change_password,
     clear_session_cookie,
+    delete_account,
     get_auth_context,
     list_active_sessions,
     login_user,
@@ -34,6 +36,7 @@ from app.auth.service import (
     validate_password_reset_token,
 )
 from app.core.config import Settings
+from app.realtime.manager import RealtimeConnectionManager
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
@@ -275,4 +278,48 @@ async def complete_password_reset(
     return ActionResponse(
         success=True,
         message="Password reset complete. Please sign in with your new password.",
+    )
+
+
+@router.delete(
+    "/account",
+    response_model=ActionResponse,
+    summary="Delete the current account",
+    description=(
+        "Deletes the authenticated account, removes memberships from other rooms, deletes "
+        "owned rooms and their attachments permanently, and clears the current browser cookie."
+    ),
+)
+async def delete_current_account(
+    request: Request,
+    response: Response,
+    payload: DeleteAccountRequest = Body(...),
+    db: AsyncSession = Depends(get_db_session),
+    settings: Settings = Depends(get_settings_from_request),
+    realtime_manager: RealtimeConnectionManager = Depends(get_realtime_manager),
+) -> ActionResponse:
+    auth_context = await get_auth_context(
+        db,
+        settings=settings,
+        session_token=request.cookies.get(settings.session_cookie_name),
+        touch_session=False,
+        required=True,
+    )
+    await delete_account(
+        db,
+        auth_context=auth_context,
+        payload=payload,
+        settings=settings,
+    )
+    await realtime_manager.broadcast_account_deleted_event(user_id=auth_context.user.id)
+    connected_inbox_user_ids = await realtime_manager.get_connected_inbox_user_ids()
+    await realtime_manager.broadcast_room_event()
+    if connected_inbox_user_ids:
+        await realtime_manager.broadcast_friendship_event(
+            user_ids=list(connected_inbox_user_ids)
+        )
+    clear_session_cookie(response, settings=settings)
+    return ActionResponse(
+        success=True,
+        message="Account deleted permanently.",
     )

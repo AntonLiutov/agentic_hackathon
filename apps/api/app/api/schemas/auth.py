@@ -70,6 +70,18 @@ class ChangePasswordRequest(BaseModel):
     new_password: PasswordValue
 
 
+class DeleteAccountRequest(BaseModel):
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "current_password": "correct-horse-battery-staple",
+            }
+        }
+    )
+
+    current_password: PasswordValue
+
+
 class ForgotPasswordRequest(BaseModel):
     model_config = ConfigDict(
         json_schema_extra={

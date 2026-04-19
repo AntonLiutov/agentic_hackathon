@@ -5,18 +5,23 @@ from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
 from fastapi import HTTPException, Request, Response, status
-from sqlalchemy import and_, or_, select
+from sqlalchemy import and_, delete, or_, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.schemas.auth import (
     ActionResponse,
     ChangePasswordRequest,
+    DeleteAccountRequest,
     ForgotPasswordRequest,
     LoginRequest,
     RegisterRequest,
     ResetPasswordRequest,
     UserSessionResponse,
+)
+from app.attachments.service import (
+    delete_attachment_files,
+    list_attachment_storage_keys_for_conversations,
 )
 from app.auth.security import (
     generate_session_token,
@@ -29,7 +34,18 @@ from app.auth.security import (
     verify_password,
 )
 from app.core.config import Settings
+from app.db.models.conversation import (
+    Conversation,
+    ConversationMember,
+    DmMetadata,
+    RoomAdmin,
+    RoomInvitation,
+    RoomMetadata,
+)
+from app.db.models.enums import DmStatus
 from app.db.models.identity import PasswordResetToken, User, UserCredential, UserSession
+from app.db.models.message import ConversationRead
+from app.db.models.social import FriendRequest, Friendship, UserBlock
 from app.services.mail import send_password_reset_email
 
 
@@ -51,6 +67,14 @@ def _password_reset_request_message(settings: Settings) -> str:
         )
 
     return "If an account exists for this email, check the inbox for a reset link."
+
+
+def _deleted_username(user_id: UUID) -> str:
+    return f"deleted-user-{str(user_id).replace('-', '')[:12]}"
+
+
+def _deleted_email(user_id: UUID) -> str:
+    return f"deleted-{user_id}@deleted.local"
 
 
 def _build_session_record(
@@ -520,3 +544,137 @@ async def reset_password(
     await _mark_existing_reset_tokens_used(db, user_id=user.id)
     await _revoke_all_user_sessions(db, user_id=user.id)
     await db.commit()
+
+
+async def delete_account(
+    db: AsyncSession,
+    *,
+    auth_context: AuthContext,
+    payload: DeleteAccountRequest,
+    settings: Settings,
+) -> None:
+    credential = await db.get(UserCredential, auth_context.user.id)
+
+    if credential is None or not verify_password(
+        payload.current_password,
+        credential.password_hash,
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Current password is incorrect.",
+        )
+
+    owned_room_ids = list(
+        (
+            await db.execute(
+                select(RoomMetadata.conversation_id).where(
+                    RoomMetadata.owner_user_id == auth_context.user.id
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    conversation_ids_to_delete = list(dict.fromkeys(owned_room_ids))
+    attachment_storage_keys = await list_attachment_storage_keys_for_conversations(
+        db,
+        conversation_ids=conversation_ids_to_delete,
+    )
+
+    if conversation_ids_to_delete:
+        conversations = (
+            await db.execute(
+                select(Conversation).where(Conversation.id.in_(conversation_ids_to_delete))
+            )
+        ).scalars().all()
+        for conversation in conversations:
+            await db.delete(conversation)
+
+    user = await db.get(User, auth_context.user.id)
+    room_membership_ids = list(
+        (
+            await db.execute(
+                select(RoomMetadata.conversation_id)
+                .join(
+                    ConversationMember,
+                    ConversationMember.conversation_id == RoomMetadata.conversation_id,
+                )
+                .where(
+                    ConversationMember.user_id == auth_context.user.id,
+                    RoomMetadata.owner_user_id != auth_context.user.id,
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+
+    if room_membership_ids:
+        await db.execute(
+            delete(ConversationMember).where(
+                ConversationMember.user_id == auth_context.user.id,
+                ConversationMember.conversation_id.in_(room_membership_ids),
+            )
+        )
+        await db.execute(
+            delete(RoomAdmin).where(
+                RoomAdmin.user_id == auth_context.user.id,
+                RoomAdmin.room_conversation_id.in_(room_membership_ids),
+            )
+        )
+
+    await db.execute(
+        delete(RoomInvitation).where(
+            or_(
+                RoomInvitation.invitee_user_id == auth_context.user.id,
+                RoomInvitation.inviter_user_id == auth_context.user.id,
+            )
+        )
+    )
+    await db.execute(
+        delete(FriendRequest).where(
+            or_(
+                FriendRequest.requester_user_id == auth_context.user.id,
+                FriendRequest.recipient_user_id == auth_context.user.id,
+            )
+        )
+    )
+    await db.execute(
+        delete(Friendship).where(
+            or_(
+                Friendship.user_one_id == auth_context.user.id,
+                Friendship.user_two_id == auth_context.user.id,
+            )
+        )
+    )
+    await db.execute(
+        delete(UserBlock).where(
+            or_(
+                UserBlock.blocker_user_id == auth_context.user.id,
+                UserBlock.blocked_user_id == auth_context.user.id,
+            )
+        )
+    )
+    await db.execute(
+        delete(ConversationRead).where(ConversationRead.user_id == auth_context.user.id)
+    )
+    await db.execute(
+        update(DmMetadata)
+        .where(
+            or_(
+                DmMetadata.user_one_id == auth_context.user.id,
+                DmMetadata.user_two_id == auth_context.user.id,
+            )
+        )
+        .values(status=DmStatus.FROZEN)
+    )
+    await _revoke_all_user_sessions(db, user_id=auth_context.user.id)
+    await _mark_existing_reset_tokens_used(db, user_id=auth_context.user.id)
+
+    if user is not None:
+        user.username = _deleted_username(user.id)
+        user.email = _deleted_email(user.id)
+        user.deleted_at = _utc_now()
+
+    await db.commit()
+    delete_attachment_files(settings=settings, storage_keys=attachment_storage_keys)

@@ -45,6 +45,8 @@ Sprint 1 is complete and Sprint 2 is complete. The repository now includes:
 - protected attachment downloads through backend authorization checks
 - immediate room attachment access loss after room removal or ban
 - DM attachment access limited to actual DM participants
+- account deletion with owned-room cleanup, room-membership removal, and preserved frozen DM history for surviving participants
+- permanent attachment file cleanup for deleted owned rooms
 
 ## Repository Structure
 
@@ -173,6 +175,10 @@ Basic checks after startup:
 49. Upload an attachment as a room member, remove that member from the room, and confirm the old attachment URL no longer downloads for them while the file remains stored for the room.
 50. In a DM, upload an attachment, then try the attachment URL from a third user who is not part of the DM and confirm access is denied.
 51. In a frozen DM created by a user-to-user block, confirm existing attachment history still remains downloadable for the two DM participants.
+52. From `/app/profile`, delete an account using the current password and confirm you return to sign-in with a success notice.
+53. Sign in as another user and confirm rooms owned by the deleted account are gone permanently.
+54. Confirm rooms owned by other users survive, but the deleted account no longer appears in their member list.
+55. If the deleted user had an existing DM, confirm the surviving participant still sees that history, the counterpart is shown as `Deleted user`, and the DM is read-only.
 
 Stop the stack:
 
@@ -205,5 +211,6 @@ This repository currently targets:
 - `SP3-04 Room Bans and Access Consistency`
 - `SP3-05 Attachments`
 - `SP3-06 Attachment Authorization`
+- `SP3-07 Account Deletion`
 
-The next implementation step is `SP3-07 Account Deletion`.
+Sprint 3 is complete. The next implementation step is Sprint 4 hardening, polish, and submission readiness.
