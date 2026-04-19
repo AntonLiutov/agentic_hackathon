@@ -49,8 +49,11 @@ Sprint 1, Sprint 2, and Sprint 3 are complete. Sprint 4 is in progress. The repo
 - permanent attachment file cleanup for deleted owned rooms
 - requirements audit in `docs/requirements-audit.md`
 - validation checklist in `docs/validation-checklist.md`
+- demo-data seeding guide in `docs/demo-data.md`
+- local performance probe for large-history fetch, realtime delivery, and presence propagation
 - composer emoji picker with search, categories, and recent emoji
 - active room and DM resync after websocket reconnect
+- deterministic demo-data seeding with a large-history room for pagination review
 
 ## Repository Structure
 
@@ -126,6 +129,20 @@ docker compose up
 
 The API image now installs from `uv.lock`, so retries should be much more stable and subsequent builds should reuse the dependency cache.
 
+To seed a populated demo world after the stack is up:
+
+```powershell
+cd apps/api
+uv run python scripts/seed_demo_data.py
+```
+
+To run the local performance probe against the seeded stack:
+
+```powershell
+cd apps/api
+uv run python scripts/measure_local_performance.py --concurrent-fetches 300
+```
+
 Basic checks after startup:
 
 1. Open `http://localhost:3000` and confirm the foundation page loads.
@@ -184,7 +201,8 @@ Basic checks after startup:
 54. Confirm rooms owned by other users survive, but the deleted account no longer appears in their member list.
 55. If the deleted user had an existing DM, confirm the surviving participant still sees that history, the counterpart is shown as `Deleted user`, and the DM is read-only.
 
-For a grouped validation path and current coverage snapshot, see `docs/validation-checklist.md`.
+For a grouped validation path, coverage snapshot, and local performance probe results, see `docs/validation-checklist.md`.
+For seeded demo users, rooms, large-history walkthrough guidance, and measured seed/performance runs, see `docs/demo-data.md`.
 
 Stop the stack:
 
@@ -220,5 +238,6 @@ This repository currently targets:
 - `SP3-07 Account Deletion`
 - `SP4-02 Reliability and Edge Cases`
 - `SP4-03 Validation and Test Coverage`
+- `SP4-04 Performance and Demo Data`
 
-Sprint 3 is complete. Sprint 4 is underway with reliability hardening and validation completed first, followed by performance/demo-data work, UI polish, and submission readiness.
+Sprint 3 is complete. Sprint 4 is underway with reliability hardening, validation, and performance/demo-data work completed first, followed by UI polish and submission readiness.

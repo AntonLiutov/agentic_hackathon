@@ -24,7 +24,7 @@ Status legend:
 | 1 | Basic moderation and administration | `done` | Room management modal, admins, ban/unban semantics, delete room, message delete exist | Clarified: remove-member => ban is acceptable |
 | 1 | Persistent message history | `done` | Persisted messages, infinite scroll, replies, edits, deletes, unread, realtime recovery path exist |  |
 | 1 | Straightforward navigation, room/contact lists, history, notifications, presence | `partial` | Broadly true | Final Sprint 4 polish should align navigation and wireframe details more tightly |
-| 1 | Intended moderate scale / ~300 simultaneous users | `partial` | Architecture targets this | Not yet proven with explicit validation/load evidence |
+| 1 | Intended moderate scale / ~300 simultaneous users | `partial` | Architecture targets this, and a local `300`-concurrent history-fetch probe now completes successfully against the seeded stack | This is useful practical evidence, but it is still not a full multi-user end-to-end scale certification |
 
 ## 2.1 User Accounts and Authentication
 
@@ -170,12 +170,12 @@ Status legend:
 
 | Section | Requirement | Status | Evidence / Current state | Notes / Follow-up |
 |---|---|---|---|---|
-| 3.1 | Support up to 300 simultaneous users | `partial` | Architecture is intended for this | Explicit validation evidence is missing |
+| 3.1 | Support up to 300 simultaneous users | `partial` | Local performance probe completed `300` concurrent history fetches successfully against the seeded `100,000`-message room | Helpful practical signal, but still lighter than a full simultaneous-user certification |
 | 3.1 | Single room may contain up to 1000 participants | `partial` | Data model does not block this | No explicit validation evidence yet |
 | 3.1 | User may belong to unlimited number of rooms | `done` | No enforced small limit exists |  |
-| 3.2 | Message delivery within 3 seconds | `partial` | Likely satisfied in local use | No formal latency validation yet |
-| 3.2 | Presence propagation below 2 seconds | `partial` | Likely satisfied in local use | No formal latency validation yet |
-| 3.2 | Usable with very large history including at least 10,000 messages | `partial` | Infinite scroll implemented | Large-history validation/demo data still needed |
+| 3.2 | Message delivery within 3 seconds | `done` | Local performance probe measured room delivery `p95 159.36ms` and DM delivery `p95 102.3ms` | Environment-specific, but comfortably below the requirement threshold |
+| 3.2 | Presence propagation below 2 seconds | `done` | Local performance probe measured presence propagation `p95 77.72ms` | Environment-specific, but comfortably below the requirement threshold |
+| 3.2 | Usable with very large history including at least 10,000 messages | `done` | Seeded `100,000` history messages and measured fetch probes on that room | Local large-history fetch probe remained responsive for both recent and older-page requests |
 | 3.3 | Messages stored persistently for years | `partial` | Persistent DB storage exists | “Years” not meaningfully provable in current project, but architecture aligns |
 | 3.3 | Infinite scroll for older history | `done` | Implemented |  |
 | 3.4 | Files stored on local filesystem | `done` | Implemented |  |
@@ -256,6 +256,6 @@ Main likely remaining base-spec gaps:
 | Wireframe alignment, especially side placement / accordion feel | `partial` | Handle in later UI polish branch |
 | Reliability proof for reconnect/stale-tab/unread/presence races | `done` | Broad automated validation completed in the Sprint 4 reliability/audit branch, including active-conversation reconnect recovery |
 | Stronger validation / test evidence | `done` | Validation checklist added in `docs/validation-checklist.md`, full-suite verification documented, and critical auth-flow coverage expanded in `SP4-03` |
-| Large-history / performance / demo-data proof | `partial` | `SP4-04` |
+| Large-history / performance / demo-data proof | `done` | `SP4-04` now includes deterministic demo data, measured seed runs at `250`, `20,000`, and `100,000` history messages, and a local performance probe for history fetch, message delivery, and presence propagation | Broader whole-system scale targets such as `1000` room participants remain tracked separately under section `3.1` |
 | Submission-ready documentation / clean-clone proof | `partial` | `SP4-05` |
 | XMPP / federation | `missing` | Stretch only after core is solid |
