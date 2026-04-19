@@ -289,6 +289,140 @@ describe("App routes", () => {
     expect(screen.getByText("preview@agentic.chat")).toBeInTheDocument();
   });
 
+  it("creates an account from the registration page and enters the workspace", async () => {
+    fetchMock.mockImplementation(async (input, init) => {
+      const url = typeof input === "string" ? input : input.toString();
+
+      if (url.endsWith("/api/auth/me")) {
+        return new Response(JSON.stringify({ detail: "Authentication required." }), {
+          status: 401,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      if (url.endsWith("/api/auth/register") && init?.method === "POST") {
+        return new Response(
+          JSON.stringify({
+            user: {
+              id: "user-9",
+              username: "new.chat.user",
+              email: "new.user@example.com",
+            },
+          }),
+          {
+            status: 201,
+            headers: { "Content-Type": "application/json" },
+          },
+        );
+      }
+
+      if (url.includes("/api/rooms/mine") || url.includes("/api/rooms/public")) {
+        return new Response(JSON.stringify({ rooms: [] }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      if (url.endsWith("/api/rooms/invitations/mine")) {
+        return new Response(JSON.stringify({ invitations: [] }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      if (url.endsWith("/api/dms/mine")) {
+        return new Response(JSON.stringify({ direct_messages: [] }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      if (url.endsWith("/api/friends")) {
+        return new Response(JSON.stringify({ friends: [] }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      if (url.endsWith("/api/friends/requests")) {
+        return new Response(
+          JSON.stringify({
+            incoming_requests: [],
+            outgoing_requests: [],
+          }),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          },
+        );
+      }
+
+      if (url.endsWith("/api/blocks")) {
+        return new Response(JSON.stringify({ blocked_users: [] }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      return new Response(JSON.stringify({ detail: "Unhandled request in test." }), {
+        status: 500,
+        headers: { "Content-Type": "application/json" },
+      });
+    });
+
+    renderRoutes(["/register"]);
+
+    fireEvent.change(screen.getByLabelText("Email"), {
+      target: { value: "new.user@example.com" },
+    });
+    fireEvent.change(screen.getByLabelText("Username"), {
+      target: { value: "new.chat.user" },
+    });
+    fireEvent.change(screen.getByLabelText("Password"), {
+      target: { value: "correct-horse-battery-staple" },
+    });
+    fireEvent.change(screen.getByLabelText("Confirm password"), {
+      target: { value: "correct-horse-battery-staple" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Create account" }));
+
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { level: 1, name: "Choose a room" })).toBeInTheDocument();
+      expect(screen.getByText("new.user@example.com")).toBeInTheDocument();
+    });
+  });
+
+  it("shows a friendly validation message when registration passwords do not match", async () => {
+    fetchMock.mockImplementationOnce(async () => {
+      return new Response(JSON.stringify({ detail: "Authentication required." }), {
+        status: 401,
+        headers: { "Content-Type": "application/json" },
+      });
+    });
+
+    renderRoutes(["/register"]);
+
+    fireEvent.change(screen.getByLabelText("Email"), {
+      target: { value: "new.user@example.com" },
+    });
+    fireEvent.change(screen.getByLabelText("Username"), {
+      target: { value: "new.chat.user" },
+    });
+    fireEvent.change(screen.getByLabelText("Password"), {
+      target: { value: "correct-horse-battery-staple" },
+    });
+    fireEvent.change(screen.getByLabelText("Confirm password"), {
+      target: { value: "mismatch-horse-battery-staple" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Create account" }));
+
+    await waitFor(() => {
+      expect(screen.getByText("Passwords do not match.")).toBeInTheDocument();
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
   it("restores the last selected room after a reload", async () => {
     window.localStorage.setItem("agentic_selected_room_id", "room-random");
 
@@ -3679,6 +3813,99 @@ describe("App routes", () => {
       target: { value: "correct-horse-battery-staple" },
     });
     fireEvent.click(screen.getByRole("button", { name: "Delete account" }));
+
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { name: "Sign in" })).toBeInTheDocument();
+      expect(screen.getByText("Account deleted permanently.")).toBeInTheDocument();
+    });
+  });
+
+  it("logs out the current workspace when an account-deleted inbox event arrives", async () => {
+    fetchMock.mockImplementation(async (input) => {
+      const url = typeof input === "string" ? input : input.toString();
+
+      if (url.endsWith("/api/auth/me")) {
+        return new Response(
+          JSON.stringify({
+            user: {
+              id: "user-1",
+              username: "Preview User",
+              email: "preview@agentic.chat",
+            },
+          }),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          },
+        );
+      }
+
+      if (url.includes("/api/rooms/mine") || url.includes("/api/rooms/public")) {
+        return new Response(JSON.stringify({ rooms: [] }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      if (url.endsWith("/api/rooms/invitations/mine")) {
+        return new Response(JSON.stringify({ invitations: [] }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      if (url.endsWith("/api/dms/mine")) {
+        return new Response(JSON.stringify({ direct_messages: [] }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      if (url.endsWith("/api/friends")) {
+        return new Response(JSON.stringify({ friends: [] }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      if (url.endsWith("/api/friends/requests")) {
+        return new Response(
+          JSON.stringify({
+            incoming_requests: [],
+            outgoing_requests: [],
+          }),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          },
+        );
+      }
+
+      if (url.endsWith("/api/blocks")) {
+        return new Response(JSON.stringify({ blocked_users: [] }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      return new Response(JSON.stringify({ detail: "Unhandled request in test." }), {
+        status: 500,
+        headers: { "Content-Type": "application/json" },
+      });
+    });
+
+    renderRoutes(["/app/chats"]);
+
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { level: 1, name: "Choose a room" })).toBeInTheDocument();
+      expect(screen.getByText("preview@agentic.chat")).toBeInTheDocument();
+    });
+
+    await act(async () => {
+      MockWebSocket.instances.find((socket) => socket.url.endsWith("/ws/inbox"))?.emit({
+        type: "account.deleted",
+      });
+    });
 
     await waitFor(() => {
       expect(screen.getByRole("heading", { name: "Sign in" })).toBeInTheDocument();

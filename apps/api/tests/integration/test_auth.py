@@ -45,6 +45,26 @@ def test_register_rejects_duplicate_email(auth_client: TestClient) -> None:
     assert second_response.json()["detail"] == "Email is already registered."
 
 
+def test_register_rejects_duplicate_username(auth_client: TestClient) -> None:
+    payload = {
+        "email": "first-username@example.com",
+        "username": "duplicate.user",
+        "password": "correct-horse-battery-staple",
+    }
+    duplicate_payload = {
+        "email": "second-username@example.com",
+        "username": "duplicate.user",
+        "password": "correct-horse-battery-staple",
+    }
+
+    first_response = auth_client.post("/api/auth/register", json=payload)
+    second_response = auth_client.post("/api/auth/register", json=duplicate_payload)
+
+    assert first_response.status_code == 201
+    assert second_response.status_code == 409
+    assert second_response.json()["detail"] == "Username is already taken."
+
+
 def test_login_me_and_logout_flow(auth_client: TestClient) -> None:
     register_response = auth_client.post(
         "/api/auth/register",
@@ -531,3 +551,27 @@ def test_account_deletion_preserves_dm_history_for_surviving_participant(
         json={"body_text": "This should not send after deletion."},
     )
     assert frozen_send_response.status_code == 403
+
+
+def test_account_deletion_rejects_incorrect_current_password(auth_client: TestClient) -> None:
+    register_response = auth_client.post(
+        "/api/auth/register",
+        json={
+            "email": "wrong-password-delete@example.com",
+            "username": "wrong.password.delete",
+            "password": "correct-horse-battery-staple",
+        },
+    )
+    assert register_response.status_code == 201
+
+    delete_account_response = auth_client.request(
+        "DELETE",
+        "/api/auth/account",
+        json={"current_password": "wrong-horse-battery-staple"},
+    )
+    assert delete_account_response.status_code == 400
+    assert delete_account_response.json()["detail"] == "Current password is incorrect."
+
+    me_response = auth_client.get("/api/auth/me")
+    assert me_response.status_code == 200
+    assert me_response.json()["user"]["username"] == "wrong.password.delete"

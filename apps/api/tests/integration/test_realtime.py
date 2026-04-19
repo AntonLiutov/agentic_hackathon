@@ -1,4 +1,6 @@
+import pytest
 from fastapi.testclient import TestClient
+from starlette.websockets import WebSocketDisconnect
 
 
 def _register_user(
@@ -103,6 +105,14 @@ def test_room_websocket_streams_message_events(auth_client: TestClient) -> None:
         assert deleted_event["type"] == "message.deleted"
         assert deleted_event["message"]["is_deleted"] is True
         assert deleted_event["message"]["body_text"] is None
+
+
+def test_inbox_websocket_rejects_unauthenticated_clients(auth_client: TestClient) -> None:
+    with pytest.raises(WebSocketDisconnect) as exc_info:
+        with auth_client.websocket_connect("/ws/inbox"):
+            pass
+
+    assert exc_info.value.code == 1008
 
 
 def test_dm_websocket_streams_message_creation(auth_client: TestClient) -> None:
