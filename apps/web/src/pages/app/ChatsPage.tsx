@@ -15,6 +15,8 @@ import { useRooms } from "../../features/rooms/use-rooms";
 import { usePresence } from "../../features/presence/use-presence";
 import { useSession } from "../../features/session/use-session";
 import { ApiError, getApiErrorMessage } from "../../shared/api/client";
+import { EmojiPicker } from "../../shared/chat/EmojiPicker";
+import { appendEmoji } from "../../shared/chat/emoji";
 import {
   getAttachmentAssetUrl,
   messagesApi,
@@ -141,6 +143,7 @@ export function ChatsPage() {
   const [pendingFiles, setPendingFiles] = useState<File[]>([]);
   const [attachmentComment, setAttachmentComment] = useState("");
   const [composerError, setComposerError] = useState<string | null>(null);
+  const [isEmojiPickerOpen, setIsEmojiPickerOpen] = useState(false);
   const messageListRef = useRef<HTMLDivElement | null>(null);
   const attachmentInputRef = useRef<HTMLInputElement | null>(null);
   const shouldAutoScrollRef = useRef(false);
@@ -533,6 +536,12 @@ export function ChatsPage() {
     setPendingFiles([]);
     setAttachmentComment("");
     setComposerError(null);
+    setIsEmojiPickerOpen(false);
+  }
+
+  function handleInsertEmoji(emoji: string) {
+    setComposeText((currentValue) => appendEmoji(currentValue, emoji));
+    setIsEmojiPickerOpen(false);
   }
 
   async function handleInvite(event: FormEvent<HTMLFormElement>) {
@@ -906,6 +915,26 @@ export function ChatsPage() {
         return upsertConversationMessage(currentMessages, message);
       });
     }, []),
+    onConnected: useCallback(() => {
+      if (!selectedRoom?.id || !selectedRoom.is_member) {
+        return;
+      }
+
+      void refreshRooms();
+      void loadLatestMessages(selectedRoom.id);
+      void syncRoomPeopleState(selectedRoom.id, selectedRoom.can_manage_members);
+      if (selectedRoom.can_manage_members) {
+        void syncManagementInvitations(selectedRoom.id);
+      }
+    }, [
+      loadLatestMessages,
+      refreshRooms,
+      selectedRoom?.can_manage_members,
+      selectedRoom?.id,
+      selectedRoom?.is_member,
+      syncManagementInvitations,
+      syncRoomPeopleState,
+    ]),
   });
 
   const adminMembers = members.filter((member) => member.is_admin);
@@ -1505,6 +1534,12 @@ export function ChatsPage() {
               <div className="composer-toolbar">
                 <button
                   type="button"
+                  onClick={() => setIsEmojiPickerOpen((currentValue) => !currentValue)}
+                >
+                  Emoji
+                </button>
+                <button
+                  type="button"
                   disabled={editingMessageId !== null}
                   onClick={() => attachmentInputRef.current?.click()}
                 >
@@ -1513,9 +1548,10 @@ export function ChatsPage() {
                 <span>
                   {editingMessageId !== null
                     ? "Editing an existing message."
-                    : "Room messages now persist with replies, edits, deletes, attachments, and continuity sequence numbers."}
+                    : "Room messages now persist with emoji, replies, edits, deletes, attachments, and continuity sequence numbers."}
                 </span>
               </div>
+              {isEmojiPickerOpen ? <EmojiPicker onSelect={handleInsertEmoji} /> : null}
               {composerError ? <p className="composer-feedback composer-feedback--error">{composerError}</p> : null}
               {replyTarget ? (
                 <div className="composer-context-banner">
