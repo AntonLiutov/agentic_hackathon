@@ -1,3 +1,5 @@
+from pathlib import Path
+
 from fastapi.testclient import TestClient
 from pytest import MonkeyPatch
 
@@ -302,3 +304,230 @@ def test_password_reset_flow_invalidates_existing_sessions(
 
     reused_token = auth_client.get(f"/api/auth/password/reset/{reset_token}")
     assert reused_token.status_code == 400
+
+
+def test_account_deletion_removes_owned_rooms_clears_memberships_and_deletes_room_files(
+    auth_client: TestClient,
+    tmp_path: Path,
+) -> None:
+    original_attachments_dir = auth_client.app.state.settings.attachments_dir
+    auth_client.app.state.settings.attachments_dir = str(tmp_path / "account-delete-attachments")
+    attachments_path = Path(auth_client.app.state.settings.attachments_dir)
+    attachments_path.mkdir(parents=True, exist_ok=True)
+
+    try:
+        owner_register = auth_client.post(
+            "/api/auth/register",
+            json={
+                "email": "account-delete-owner@example.com",
+                "username": "account.delete.owner",
+                "password": "correct-horse-battery-staple",
+            },
+        )
+        assert owner_register.status_code == 201
+
+        owned_room_response = auth_client.post(
+            "/api/rooms",
+            json={
+                "name": "account-delete-owned-room",
+                "description": "Owned room that should be deleted.",
+                "visibility": "public",
+            },
+        )
+        assert owned_room_response.status_code == 201
+        owned_room_id = owned_room_response.json()["id"]
+
+        owned_attachment_response = auth_client.post(
+            f"/api/conversations/{owned_room_id}/messages/attachments",
+            data={"body_text": "Owned room attachment."},
+            files={
+                "files": ("owned.txt", b"owned-room-file", "text/plain"),
+            },
+        )
+        assert owned_attachment_response.status_code == 201
+        stored_files = list(attachments_path.iterdir())
+        assert len(stored_files) == 1
+        stored_owned_file = stored_files[0]
+        assert stored_owned_file.exists() is True
+
+        auth_client.post("/api/auth/logout")
+        other_register = auth_client.post(
+            "/api/auth/register",
+            json={
+                "email": "account-delete-other@example.com",
+                "username": "account.delete.other",
+                "password": "correct-horse-battery-staple",
+            },
+        )
+        assert other_register.status_code == 201
+
+        surviving_room_response = auth_client.post(
+            "/api/rooms",
+            json={
+                "name": "account-delete-surviving-room",
+                "description": "Room that should survive with cleaned membership.",
+                "visibility": "public",
+            },
+        )
+        assert surviving_room_response.status_code == 201
+        surviving_room_id = surviving_room_response.json()["id"]
+
+        auth_client.post("/api/auth/logout")
+        owner_login = auth_client.post(
+            "/api/auth/login",
+            json={
+                "email": "account-delete-owner@example.com",
+                "password": "correct-horse-battery-staple",
+            },
+        )
+        assert owner_login.status_code == 200
+
+        join_surviving_room = auth_client.post(f"/api/rooms/{surviving_room_id}/join")
+        assert join_surviving_room.status_code == 200
+
+        delete_account_response = auth_client.request(
+            "DELETE",
+            "/api/auth/account",
+            json={"current_password": "correct-horse-battery-staple"},
+        )
+        assert delete_account_response.status_code == 200
+        assert delete_account_response.json()["message"] == "Account deleted permanently."
+
+        me_after_delete = auth_client.get("/api/auth/me")
+        assert me_after_delete.status_code == 401
+        assert stored_owned_file.exists() is False
+
+        auth_client.post("/api/auth/logout")
+        other_login = auth_client.post(
+            "/api/auth/login",
+            json={
+                "email": "account-delete-other@example.com",
+                "password": "correct-horse-battery-staple",
+            },
+        )
+        assert other_login.status_code == 200
+
+        owned_room_lookup = auth_client.get(f"/api/rooms/{owned_room_id}")
+        assert owned_room_lookup.status_code == 404
+
+        surviving_members = auth_client.get(f"/api/rooms/{surviving_room_id}/members")
+        assert surviving_members.status_code == 200
+        assert [member["username"] for member in surviving_members.json()["members"]] == [
+            "account.delete.other"
+        ]
+    finally:
+        auth_client.app.state.settings.attachments_dir = original_attachments_dir
+        if attachments_path.exists():
+            for child in attachments_path.iterdir():
+                child.unlink(missing_ok=True)
+            attachments_path.rmdir()
+
+
+def test_account_deletion_preserves_dm_history_for_surviving_participant(
+    auth_client: TestClient,
+) -> None:
+    owner_register = auth_client.post(
+        "/api/auth/register",
+        json={
+            "email": "account-delete-dm-owner@example.com",
+            "username": "account.delete.dm.owner",
+            "password": "correct-horse-battery-staple",
+        },
+    )
+    assert owner_register.status_code == 201
+    auth_client.post("/api/auth/logout")
+
+    other_register = auth_client.post(
+        "/api/auth/register",
+        json={
+            "email": "account-delete-dm-other@example.com",
+            "username": "account.delete.dm.other",
+            "password": "correct-horse-battery-staple",
+        },
+    )
+    assert other_register.status_code == 201
+    auth_client.post("/api/auth/logout")
+
+    owner_login = auth_client.post(
+        "/api/auth/login",
+        json={
+            "email": "account-delete-dm-owner@example.com",
+            "password": "correct-horse-battery-staple",
+        },
+    )
+    assert owner_login.status_code == 200
+    request_response = auth_client.post(
+        "/api/friends/requests",
+        json={"username": "account.delete.dm.other"},
+    )
+    assert request_response.status_code == 201
+    auth_client.post("/api/auth/logout")
+
+    other_login = auth_client.post(
+        "/api/auth/login",
+        json={
+            "email": "account-delete-dm-other@example.com",
+            "password": "correct-horse-battery-staple",
+        },
+    )
+    assert other_login.status_code == 200
+    accept_response = auth_client.post(
+        f"/api/friends/requests/{request_response.json()['id']}/accept"
+    )
+    assert accept_response.status_code == 200
+
+    create_dm_response = auth_client.post(
+        "/api/dms",
+        json={"username": "account.delete.dm.owner"},
+    )
+    assert create_dm_response.status_code == 201
+    dm_id = create_dm_response.json()["id"]
+
+    create_message_response = auth_client.post(
+        f"/api/conversations/{dm_id}/messages",
+        json={"body_text": "Keep this DM history visible."},
+    )
+    assert create_message_response.status_code == 201
+    auth_client.post("/api/auth/logout")
+
+    owner_login = auth_client.post(
+        "/api/auth/login",
+        json={
+            "email": "account-delete-dm-owner@example.com",
+            "password": "correct-horse-battery-staple",
+        },
+    )
+    assert owner_login.status_code == 200
+    delete_account_response = auth_client.request(
+        "DELETE",
+        "/api/auth/account",
+        json={"current_password": "correct-horse-battery-staple"},
+    )
+    assert delete_account_response.status_code == 200
+
+    auth_client.post("/api/auth/logout")
+    other_login = auth_client.post(
+        "/api/auth/login",
+        json={
+            "email": "account-delete-dm-other@example.com",
+            "password": "correct-horse-battery-staple",
+        },
+    )
+    assert other_login.status_code == 200
+
+    direct_messages_response = auth_client.get("/api/dms/mine")
+    assert direct_messages_response.status_code == 200
+    direct_messages = direct_messages_response.json()["direct_messages"]
+    assert len(direct_messages) == 1
+    assert direct_messages[0]["id"] == dm_id
+    assert direct_messages[0]["counterpart_username"] == "Deleted user"
+    assert direct_messages[0]["can_message"] is False
+
+    history_response = auth_client.get(f"/api/conversations/{dm_id}/messages")
+    assert history_response.status_code == 200
+    assert history_response.json()["messages"][0]["author_username"] == "account.delete.dm.other"
+    frozen_send_response = auth_client.post(
+        f"/api/conversations/{dm_id}/messages",
+        json={"body_text": "This should not send after deletion."},
+    )
+    assert frozen_send_response.status_code == 403

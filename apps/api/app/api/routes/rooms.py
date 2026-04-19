@@ -417,6 +417,7 @@ async def delete_selected_room(
         db,
         actor=auth_context.user,
         room_id=room_id,
+        settings=settings,
     )
     await realtime_manager.broadcast_room_event()
     return response

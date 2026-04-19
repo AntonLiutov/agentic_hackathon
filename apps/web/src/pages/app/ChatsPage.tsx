@@ -65,7 +65,7 @@ function formatAttachmentSize(sizeBytes: number) {
   return `${(sizeBytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-const MAX_IMAGE_BYTES = 2 * 1024 * 1024;
+const MAX_IMAGE_BYTES = 3 * 1024 * 1024;
 const MAX_FILE_BYTES = 20 * 1024 * 1024;
 const MESSAGE_PAGE_SIZE = 30;
 

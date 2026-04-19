@@ -77,7 +77,7 @@ export function AppFrame() {
 function AppFrameLayout() {
   const navigate = useNavigate();
   const location = useLocation();
-  const { user, signOut } = useSession();
+  const { clearSession, user, signOut } = useSession();
   const { setPresence } = usePresence();
   const { pendingIncomingCount, refreshFriendships } = useFriends();
   const {
@@ -176,12 +176,19 @@ function AppFrameLayout() {
     });
   }, [refreshRooms]);
 
+  const handleAccountDeleted = useCallback(() => {
+    window.sessionStorage.setItem("agentic_notice", "Account deleted permanently.");
+    clearSession();
+    navigate("/signin?notice=account-deleted", { replace: true });
+  }, [clearSession, navigate]);
+
   useInboxRealtime({
     enabled: Boolean(user),
     onUnread: handleUnreadEvent,
     onPresence: handlePresenceEvent,
     onFriendshipsChanged: handleFriendshipsChanged,
     onRoomsChanged: handleRoomsChanged,
+    onAccountDeleted: handleAccountDeleted,
     onConnected: handleInboxConnected,
   });
 

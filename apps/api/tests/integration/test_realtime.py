@@ -270,3 +270,111 @@ def test_inbox_websocket_streams_room_events(auth_client: TestClient) -> None:
 
         room_event = websocket.receive_json()
         assert room_event["type"] == "rooms.updated"
+
+
+def test_account_deletion_streams_room_and_friendship_refresh_events(
+    auth_client: TestClient,
+) -> None:
+    _register_user(
+        auth_client,
+        email="rt-delete-alpha@example.com",
+        username="rt.delete.alpha",
+    )
+    delete_owner_room = auth_client.post(
+        "/api/rooms",
+        json={
+            "name": "rt-delete-owned-room",
+            "description": "Owned room deleted on account removal.",
+            "visibility": "public",
+        },
+    )
+    assert delete_owner_room.status_code == 201
+    auth_client.post("/api/auth/logout")
+
+    _register_user(
+        auth_client,
+        email="rt-delete-beta@example.com",
+        username="rt.delete.beta",
+    )
+    surviving_room = auth_client.post(
+        "/api/rooms",
+        json={
+            "name": "rt-delete-surviving-room",
+            "description": "Room that keeps going after account removal.",
+            "visibility": "public",
+        },
+    )
+    assert surviving_room.status_code == 201
+    surviving_room_id = surviving_room.json()["id"]
+    auth_client.post("/api/auth/logout")
+
+    _login_user(auth_client, email="rt-delete-alpha@example.com")
+    join_response = auth_client.post(f"/api/rooms/{surviving_room_id}/join")
+    assert join_response.status_code == 200
+    request_response = auth_client.post(
+        "/api/friends/requests",
+        json={"username": "rt.delete.beta"},
+    )
+    assert request_response.status_code == 201
+    auth_client.post("/api/auth/logout")
+
+    _login_user(auth_client, email="rt-delete-beta@example.com")
+    accept_response = auth_client.post(
+        f"/api/friends/requests/{request_response.json()['id']}/accept"
+    )
+    assert accept_response.status_code == 200
+
+    with auth_client.websocket_connect("/ws/inbox") as websocket:
+        subscribed_event = websocket.receive_json()
+        assert subscribed_event["type"] == "inbox.subscribed"
+
+        auth_client.post("/api/auth/logout")
+        _login_user(auth_client, email="rt-delete-alpha@example.com")
+
+        delete_account_response = auth_client.request(
+            "DELETE",
+            "/api/auth/account",
+            json={"current_password": "correct-horse-battery-staple"},
+        )
+        assert delete_account_response.status_code == 200
+
+        event_types = {websocket.receive_json()["type"], websocket.receive_json()["type"]}
+        assert event_types == {"rooms.updated", "friendships.updated"}
+
+
+def test_account_deletion_streams_account_deleted_event_to_other_sessions(
+    auth_client: TestClient,
+) -> None:
+    _register_user(
+        auth_client,
+        email="rt-delete-self@example.com",
+        username="rt.delete.self",
+    )
+    first_session_token = auth_client.cookies.get("agentic_chat_session")
+    assert first_session_token is not None
+
+    login_response = auth_client.post(
+        "/api/auth/login",
+        json={
+            "email": "rt-delete-self@example.com",
+            "password": "correct-horse-battery-staple",
+        },
+    )
+    assert login_response.status_code == 200
+
+    with auth_client.websocket_connect(
+        "/ws/inbox",
+        cookies={"agentic_chat_session": first_session_token},
+    ) as websocket:
+        subscribed_event = websocket.receive_json()
+        assert subscribed_event["type"] == "inbox.subscribed"
+
+        delete_account_response = auth_client.request(
+            "DELETE",
+            "/api/auth/account",
+            json={"current_password": "correct-horse-battery-staple"},
+        )
+        assert delete_account_response.status_code == 200
+
+        account_deleted_event = websocket.receive_json()
+        assert account_deleted_event["type"] == "account.deleted"
