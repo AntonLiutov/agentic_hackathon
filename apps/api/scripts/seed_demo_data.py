@@ -57,6 +57,10 @@ def _resolve_attachments_dir(configured_path: str) -> str:
     return configured_path
 
 
+def _log_progress(message: str) -> None:
+    print(f"[seed] {message}", flush=True)
+
+
 async def main() -> None:
     args = parse_args()
     settings = get_settings()
@@ -68,6 +72,14 @@ async def main() -> None:
         }
     )
     manager = DatabaseManager(runtime_settings.database_url)
+    _log_progress(
+        "Starting demo seeding with "
+        f"history_count={args.large_history_count}, "
+        f"chunk_size={args.history_chunk_size}, "
+        f"replace={not args.no_replace}."
+    )
+    _log_progress(f"Using database URL: {runtime_settings.database_url}")
+    _log_progress(f"Using attachments dir: {runtime_settings.attachments_dir}")
 
     try:
         summary = await seed_demo_data(
@@ -76,8 +88,10 @@ async def main() -> None:
             large_history_count=args.large_history_count,
             history_chunk_size=args.history_chunk_size,
             replace=not args.no_replace,
+            progress_callback=_log_progress,
         )
     finally:
+        _log_progress("Disposing database connections.")
         await manager.dispose()
 
     print("Demo data seeded successfully.")

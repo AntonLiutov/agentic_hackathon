@@ -50,6 +50,7 @@ Sprint 1, Sprint 2, and Sprint 3 are complete. Sprint 4 is in progress. The repo
 - requirements audit in `docs/requirements-audit.md`
 - validation checklist in `docs/validation-checklist.md`
 - demo-data seeding guide in `docs/demo-data.md`
+- submission guide in `docs/submission-guide.md`
 - local performance probe for large-history fetch, realtime delivery, and presence propagation
 - composer emoji picker with search, categories, and recent emoji
 - active room and DM resync after websocket reconnect
@@ -76,6 +77,24 @@ Sprint 1, Sprint 2, and Sprint 3 are complete. Sprint 4 is in progress. The repo
 4. API health is available at `http://localhost:8000/healthz`.
 5. Mailpit inbox UI is available at `http://localhost:8025`.
 6. Register a user or sign in with an existing account to enter the protected workspace shell.
+
+The API container now applies Alembic migrations automatically on startup, so a fresh Postgres
+volume created by `docker compose down -v` followed by `docker compose up --build` should still
+boot cleanly without a separate migration step.
+
+```powershell
+cd apps/api
+uv run python scripts/seed_demo_data.py
+```
+
+If you want the populated reviewer flow instead of starting with an empty workspace, seed the demo
+world and sign in as `demo.alice` with password `demo-chat-pass-2026`. Recommended first stops:
+
+- `demo-general` for messaging, moderation, and attachments
+- `demo-history-lab` for long-history paging
+- `/app/contacts` for friendship, DM, and frozen-history review
+
+For the shortest reviewer walkthrough, see `docs/submission-guide.md`.
 
 ## Local Verification
 
@@ -201,6 +220,7 @@ Basic checks after startup:
 54. Confirm rooms owned by other users survive, but the deleted account no longer appears in their member list.
 55. If the deleted user had an existing DM, confirm the surviving participant still sees that history, the counterpart is shown as `Deleted user`, and the DM is read-only.
 
+For the shortest reviewer flow, see `docs/submission-guide.md`.
 For a grouped validation path, coverage snapshot, and local performance probe results, see `docs/validation-checklist.md`.
 For seeded demo users, rooms, large-history walkthrough guidance, and measured seed/performance runs, see `docs/demo-data.md`.
 
@@ -239,5 +259,6 @@ This repository currently targets:
 - `SP4-02 Reliability and Edge Cases`
 - `SP4-03 Validation and Test Coverage`
 - `SP4-04 Performance and Demo Data`
+- `SP4-05 Submission Readiness`
 
-Sprint 3 is complete. Sprint 4 is underway with reliability hardening, validation, and performance/demo-data work completed first, followed by UI polish and submission readiness.
+Sprint 3 is complete. Sprint 4 now has reliability hardening, validation, performance/demo-data work, and submission readiness completed before the final UI polish pass.

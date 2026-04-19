@@ -7,7 +7,7 @@ import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from sqlalchemy import delete, insert, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -111,11 +111,25 @@ def _write_demo_attachment(
     return len(payload)
 
 
+def _emit_progress(
+    progress_callback: Callable[[str], None] | None,
+    message: str,
+) -> None:
+    if progress_callback is not None:
+        progress_callback(message)
+
+
 async def _cleanup_existing_demo_data(db: AsyncSession, *, settings: Settings) -> None:
+    demo_emails = [normalize_email(_user_email(definition.username)) for definition in DEMO_USERS]
     demo_user_ids = list(
         (
             await db.execute(
-                select(User.id).where(User.username.like(f"{DEMO_USER_PREFIX}%"))
+                select(User.id).where(
+                    or_(
+                        User.username.like(f"{DEMO_USER_PREFIX}%"),
+                        User.email.in_(demo_emails),
+                    )
+                )
             )
         ).scalars()
     )
@@ -123,7 +137,10 @@ async def _cleanup_existing_demo_data(db: AsyncSession, *, settings: Settings) -
         (
             await db.execute(
                 select(RoomMetadata.conversation_id).where(
-                    RoomMetadata.name.like(f"{DEMO_ROOM_PREFIX}%")
+                    or_(
+                        RoomMetadata.name.like(f"{DEMO_ROOM_PREFIX}%"),
+                        RoomMetadata.owner_user_id.in_(demo_user_ids) if demo_user_ids else False,
+                    )
                 )
             )
         ).scalars()
@@ -177,22 +194,64 @@ async def _cleanup_existing_demo_data(db: AsyncSession, *, settings: Settings) -
 
     if demo_room_ids:
         await db.execute(
-            delete(RoomInvitation).where(RoomInvitation.room_conversation_id.in_(demo_room_ids))
+            delete(RoomInvitation).where(
+                or_(
+                    RoomInvitation.room_conversation_id.in_(demo_room_ids),
+                    RoomInvitation.invitee_user_id.in_(demo_user_ids) if demo_user_ids else False,
+                    RoomInvitation.inviter_user_id.in_(demo_user_ids) if demo_user_ids else False,
+                )
+            )
         )
-        await db.execute(delete(RoomBan).where(RoomBan.room_conversation_id.in_(demo_room_ids)))
-        await db.execute(delete(RoomAdmin).where(RoomAdmin.room_conversation_id.in_(demo_room_ids)))
+        await db.execute(
+            delete(RoomBan).where(
+                or_(
+                    RoomBan.room_conversation_id.in_(demo_room_ids),
+                    RoomBan.user_id.in_(demo_user_ids) if demo_user_ids else False,
+                    RoomBan.banned_by_user_id.in_(demo_user_ids) if demo_user_ids else False,
+                )
+            )
+        )
+        await db.execute(
+            delete(RoomAdmin).where(
+                or_(
+                    RoomAdmin.room_conversation_id.in_(demo_room_ids),
+                    RoomAdmin.user_id.in_(demo_user_ids) if demo_user_ids else False,
+                    RoomAdmin.granted_by_user_id.in_(demo_user_ids) if demo_user_ids else False,
+                )
+            )
+        )
         await db.execute(
             delete(RoomMetadata).where(RoomMetadata.conversation_id.in_(demo_room_ids))
         )
 
     if demo_dm_ids:
-        await db.execute(delete(DmMetadata).where(DmMetadata.conversation_id.in_(demo_dm_ids)))
+        await db.execute(
+            delete(DmMetadata).where(
+                or_(
+                    DmMetadata.conversation_id.in_(demo_dm_ids),
+                    DmMetadata.user_one_id.in_(demo_user_ids) if demo_user_ids else False,
+                    DmMetadata.user_two_id.in_(demo_user_ids) if demo_user_ids else False,
+                )
+            )
+        )
 
     if conversation_ids:
         await db.execute(
-            delete(ConversationMember).where(ConversationMember.conversation_id.in_(conversation_ids))
+            delete(ConversationMember).where(
+                or_(
+                    ConversationMember.conversation_id.in_(conversation_ids),
+                    ConversationMember.user_id.in_(demo_user_ids) if demo_user_ids else False,
+                )
+            )
         )
-        await db.execute(delete(Conversation).where(Conversation.id.in_(conversation_ids)))
+        await db.execute(
+            delete(Conversation).where(
+                or_(
+                    Conversation.id.in_(conversation_ids),
+                    Conversation.created_by_user_id.in_(demo_user_ids) if demo_user_ids else False,
+                )
+            )
+        )
 
     if demo_user_ids:
         await db.execute(
@@ -458,10 +517,15 @@ async def _insert_large_history(
     start_time: datetime,
     label: str,
     chunk_size: int,
+    progress_callback: Callable[[str], None] | None = None,
 ) -> None:
     inserted = 0
     sequence = 1
+    total_chunks = math.ceil(count / chunk_size)
+    chunk_index = 0
+    progress_interval = max(1, total_chunks // 10)
     while inserted < count:
+        chunk_index += 1
         current_chunk = min(chunk_size, count - inserted)
         rows = []
         for offset in range(current_chunk):
@@ -478,6 +542,18 @@ async def _insert_large_history(
         await db.execute(insert(Message), rows)
         inserted += current_chunk
         sequence += current_chunk
+        if (
+            chunk_index == 1
+            or chunk_index == total_chunks
+            or chunk_index % progress_interval == 0
+        ):
+            _emit_progress(
+                progress_callback,
+                (
+                    f"Seeded history chunk {chunk_index}/{total_chunks} "
+                    f"({inserted}/{count} messages)."
+                ),
+            )
 
     conversation.message_sequence_head = count
 
@@ -491,7 +567,9 @@ async def _seed_messages(
     dms: dict[str, Conversation],
     large_history_count: int,
     history_chunk_size: int,
+    progress_callback: Callable[[str], None] | None = None,
 ) -> MessageSeedStats:
+    _emit_progress(progress_callback, "Creating demo room and DM messages.")
     general_messages = await _insert_small_message_set(
         db,
         conversation=rooms["demo-general"],
@@ -607,6 +685,13 @@ async def _seed_messages(
     )
 
     history_insert_started_at = time.perf_counter()
+    _emit_progress(
+        progress_callback,
+        (
+            f"Seeding long history room with {large_history_count} messages "
+            f"in chunks of {history_chunk_size}."
+        ),
+    )
     await _insert_large_history(
         db,
         conversation=rooms["demo-history-lab"],
@@ -615,8 +700,16 @@ async def _seed_messages(
         start_time=SEED_BASE_TIME - timedelta(days=40),
         label="History lab",
         chunk_size=history_chunk_size,
+        progress_callback=progress_callback,
     )
     history_insert_duration_seconds = time.perf_counter() - history_insert_started_at
+    _emit_progress(
+        progress_callback,
+        (
+            "Finished long history seeding in "
+            f"{round(history_insert_duration_seconds, 3)}s."
+        ),
+    )
 
     await _insert_small_message_set(
         db,
@@ -667,15 +760,23 @@ async def seed_demo_data(
     large_history_count: int = 5_000,
     history_chunk_size: int = 1_000,
     replace: bool = True,
+    progress_callback: Callable[[str], None] | None = None,
 ) -> DemoSeedSummary:
     total_started_at = time.perf_counter()
     async with session_factory() as db:
         if replace:
+            _emit_progress(progress_callback, "Removing any existing demo dataset.")
             await _cleanup_existing_demo_data(db, settings=settings)
 
+        _emit_progress(progress_callback, "Creating demo users and credentials.")
         users = await _seed_users(db, settings=settings)
+        _emit_progress(
+            progress_callback,
+            "Creating friendships, pending requests, and block examples.",
+        )
         await _seed_friendships_and_blocks(db, users=users)
 
+        _emit_progress(progress_callback, "Creating demo rooms, memberships, and invitations.")
         rooms = {
             "demo-general": await _create_room(
                 db,
@@ -711,6 +812,7 @@ async def seed_demo_data(
             ),
         }
 
+        _emit_progress(progress_callback, "Creating demo direct-message conversations.")
         dms = {
             "alice-bob": await _create_dm(
                 db,
@@ -746,8 +848,10 @@ async def seed_demo_data(
             dms=dms,
             large_history_count=large_history_count,
             history_chunk_size=history_chunk_size,
+            progress_callback=progress_callback,
         )
 
+        _emit_progress(progress_callback, "Writing unread/read markers for seeded conversations.")
         await _seed_read_state(
             db,
             conversation=rooms["demo-general"],
@@ -773,6 +877,7 @@ async def seed_demo_data(
             last_read_sequence_number=1,
         )
 
+        _emit_progress(progress_callback, "Committing seeded demo data.")
         await db.commit()
 
     total_duration_seconds = time.perf_counter() - total_started_at

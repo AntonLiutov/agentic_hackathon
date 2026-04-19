@@ -3,6 +3,10 @@
 This document turns the implemented chat platform into a repeatable validation package for reviewers,
 demo runs, and Sprint 4 hardening work.
 
+For the shortest reviewer walkthrough, start with:
+
+- `docs/submission-guide.md`
+
 ## Automated Validation
 
 ### Backend

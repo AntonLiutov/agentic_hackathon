@@ -243,7 +243,7 @@ Status legend:
 | Section | Requirement | Status | Evidence / Current state | Notes / Follow-up |
 |---|---|---|---|---|
 | 7 | Public GitHub repository | `partial` | Repo exists and workflow assumes GitHub | Final submission check still needed |
-| 7 | Project buildable/runnable via `docker compose up` from root | `partial` | Current development flow is built around this and repeatedly verified | Sprint 4 still needs clean-clone reviewer-style proof and documentation polish |
+| 7 | Project buildable/runnable via `docker compose up` from root | `done` | Root `docker compose up --build` flow has been repeatedly verified, with seeded demo data and reviewer guidance now documented explicitly | Fresh-machine dependency download time can still vary, but the documented root flow is ready for reviewers |
 
 ## First-Pass Conclusions
 
@@ -257,5 +257,5 @@ Main likely remaining base-spec gaps:
 | Reliability proof for reconnect/stale-tab/unread/presence races | `done` | Broad automated validation completed in the Sprint 4 reliability/audit branch, including active-conversation reconnect recovery |
 | Stronger validation / test evidence | `done` | Validation checklist added in `docs/validation-checklist.md`, full-suite verification documented, and critical auth-flow coverage expanded in `SP4-03` |
 | Large-history / performance / demo-data proof | `done` | `SP4-04` now includes deterministic demo data, measured seed runs at `250`, `20,000`, and `100,000` history messages, and a local performance probe for history fetch, message delivery, and presence propagation | Broader whole-system scale targets such as `1000` room participants remain tracked separately under section `3.1` |
-| Submission-ready documentation / clean-clone proof | `partial` | `SP4-05` |
+| Submission-ready documentation / clean-clone proof | `done` | `SP4-05` adds explicit reviewer guidance in `docs/submission-guide.md` and aligns the README/doc set around the root Docker flow |
 | XMPP / federation | `missing` | Stretch only after core is solid |

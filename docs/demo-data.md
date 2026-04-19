@@ -3,6 +3,10 @@
 Sprint 4 includes a deterministic demo-data seeding path so the app can be reviewed as a populated
 chat product instead of an empty shell.
 
+For the shortest reviewer path through the seeded environment, see:
+
+- `docs/submission-guide.md`
+
 ## Seed command
 
 From the repository root:
