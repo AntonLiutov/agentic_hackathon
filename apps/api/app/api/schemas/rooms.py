@@ -77,6 +77,20 @@ class RoomInvitationListResponse(BaseModel):
     invitations: list[RoomInvitationResponse]
 
 
+class RoomManagementInvitationResponse(BaseModel):
+    id: UUID
+    invitee_user_id: UUID
+    invitee_username: str
+    inviter_username: str | None
+    status: InvitationStatus
+    created_at: datetime
+    message: str | None
+
+
+class RoomManagementInvitationListResponse(BaseModel):
+    invitations: list[RoomManagementInvitationResponse]
+
+
 class RoomMemberResponse(BaseModel):
     id: UUID
     username: str

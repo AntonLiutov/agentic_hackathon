@@ -10,6 +10,7 @@ type UseInboxRealtimeOptions = {
   onUnread: (conversationId: string, sequenceHead: number) => void;
   onPresence?: (userId: string, presenceStatus: PresenceStatus) => void;
   onFriendshipsChanged?: () => void;
+  onRoomsChanged?: () => void;
   onConnected?: () => void;
 };
 
@@ -31,6 +32,9 @@ type InboxEnvelope =
       type: "friendships.updated";
     }
   | {
+      type: "rooms.updated";
+    }
+  | {
       type: "pong";
     };
 
@@ -39,6 +43,7 @@ export function useInboxRealtime({
   onUnread,
   onPresence,
   onFriendshipsChanged,
+  onRoomsChanged,
   onConnected,
 }: UseInboxRealtimeOptions) {
   const [status, setStatus] = useState<InboxRealtimeStatus>("idle");
@@ -49,6 +54,7 @@ export function useInboxRealtime({
     onUnread,
     onPresence,
     onFriendshipsChanged,
+    onRoomsChanged,
     onConnected,
   });
 
@@ -57,9 +63,10 @@ export function useInboxRealtime({
       onUnread,
       onPresence,
       onFriendshipsChanged,
+      onRoomsChanged,
       onConnected,
     };
-  }, [onConnected, onFriendshipsChanged, onPresence, onUnread]);
+  }, [onConnected, onFriendshipsChanged, onPresence, onRoomsChanged, onUnread]);
 
   useEffect(() => {
     if (!enabled || typeof WebSocket === "undefined") {
@@ -110,6 +117,11 @@ export function useInboxRealtime({
 
         if (payload.type === "friendships.updated") {
           handlersRef.current.onFriendshipsChanged?.();
+          return;
+        }
+
+        if (payload.type === "rooms.updated") {
+          handlersRef.current.onRoomsChanged?.();
         }
       };
 

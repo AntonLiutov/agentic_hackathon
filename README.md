@@ -192,5 +192,6 @@ This repository currently targets:
 - `SP2-08 Presence`
 - `SP3-01 Friendships`
 - `SP3-02 User-to-User Bans`
+- `SP3-03 Room Administration`
 
-The next implementation step is `SP3-03 Room Administration`.
+The next implementation step is `SP3-04 Room Bans and Access Consistency`.

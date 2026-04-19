@@ -15,6 +15,7 @@ from app.api.schemas.rooms import (
     CreateRoomRequest,
     RoomBanResponse,
     RoomInvitationResponse,
+    RoomManagementInvitationResponse,
     RoomMemberResponse,
     RoomSummaryResponse,
 )
@@ -261,8 +262,11 @@ async def create_room(
         member_count=1,
         is_member=True,
         is_owner=True,
+        is_admin=True,
+        is_banned=False,
         can_join=False,
         can_leave=False,
+        can_manage_members=True,
         joined_at=room_conversation.created_at,
         unread_count=0,
     )
@@ -601,6 +605,57 @@ async def invite_user_to_private_room(
     )
 
 
+async def list_room_management_invitations(
+    db: AsyncSession,
+    *,
+    user: User,
+    room_id: UUID,
+) -> list[RoomManagementInvitationResponse]:
+    access_context = await get_room_access_context(db, room_id=room_id, user=user)
+    require_room_admin(access_context)
+
+    invitee = User.__table__.alias("invitee")
+    inviter = User.__table__.alias("inviter")
+    rows = (
+        await db.execute(
+            select(
+                RoomInvitation.id,
+                RoomInvitation.invitee_user_id,
+                invitee.c.username,
+                inviter.c.username,
+                RoomInvitation.status,
+                RoomInvitation.created_at,
+                RoomInvitation.invitation_text,
+            )
+            .join(invitee, invitee.c.id == RoomInvitation.invitee_user_id)
+            .outerjoin(inviter, inviter.c.id == RoomInvitation.inviter_user_id)
+            .where(RoomInvitation.room_conversation_id == room_id)
+            .order_by(RoomInvitation.created_at.desc())
+        )
+    ).all()
+
+    return [
+        RoomManagementInvitationResponse(
+            id=invitation_id,
+            invitee_user_id=invitee_user_id,
+            invitee_username=invitee_username,
+            inviter_username=inviter_username,
+            status=invitation_status,
+            created_at=created_at,
+            message=invitation_text,
+        )
+        for (
+            invitation_id,
+            invitee_user_id,
+            invitee_username,
+            inviter_username,
+            invitation_status,
+            created_at,
+            invitation_text,
+        ) in rows
+    ]
+
+
 async def accept_room_invitation(
     db: AsyncSession,
     *,
@@ -789,6 +844,143 @@ async def remove_room_member(
         success=True,
         message="Member removed from the room and banned from rejoining.",
     )
+
+
+async def grant_room_admin(
+    db: AsyncSession,
+    *,
+    actor: User,
+    room_id: UUID,
+    member_user_id: UUID,
+) -> ActionResponse:
+    access_context = await get_room_access_context(db, room_id=room_id, user=actor)
+    require_room_admin(access_context)
+    room = access_context.room
+
+    if actor.id != room.owner_user_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only the room owner can grant admin access.",
+        )
+
+    membership = await _get_membership(db, room_id=room_id, user_id=member_user_id)
+    if membership is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Room member not found.",
+        )
+
+    if await _is_room_admin(db, room_id=room_id, user_id=member_user_id):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="This user is already a room admin.",
+        )
+
+    db.add(
+        RoomAdmin(
+            room_conversation_id=room_id,
+            user_id=member_user_id,
+            granted_by_user_id=actor.id,
+        )
+    )
+    await db.commit()
+
+    return ActionResponse(success=True, message="Admin access granted.")
+
+
+async def revoke_room_admin(
+    db: AsyncSession,
+    *,
+    actor: User,
+    room_id: UUID,
+    admin_user_id: UUID,
+) -> ActionResponse:
+    access_context = await get_room_access_context(db, room_id=room_id, user=actor)
+    require_room_admin(access_context)
+    room = access_context.room
+
+    if admin_user_id == room.owner_user_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="The room owner always keeps admin access.",
+        )
+
+    if admin_user_id == actor.id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Use the owner workflow to change your own admin status.",
+        )
+
+    room_admin = (
+        await db.execute(
+            select(RoomAdmin).where(
+                RoomAdmin.room_conversation_id == room_id,
+                RoomAdmin.user_id == admin_user_id,
+            )
+        )
+    ).scalars().first()
+
+    if room_admin is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Room admin not found.",
+        )
+
+    await db.delete(room_admin)
+    await db.commit()
+
+    return ActionResponse(success=True, message="Admin access removed.")
+
+
+async def unban_room_user(
+    db: AsyncSession,
+    *,
+    actor: User,
+    room_id: UUID,
+    banned_user_id: UUID,
+) -> ActionResponse:
+    access_context = await get_room_access_context(db, room_id=room_id, user=actor)
+    require_room_admin(access_context)
+
+    room_ban = await _get_room_ban(db, room_id=room_id, user_id=banned_user_id)
+    if room_ban is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Room ban not found.",
+        )
+
+    await db.delete(room_ban)
+    await db.commit()
+
+    return ActionResponse(success=True, message="User removed from the room ban list.")
+
+
+async def delete_room(
+    db: AsyncSession,
+    *,
+    actor: User,
+    room_id: UUID,
+) -> ActionResponse:
+    access_context = await get_room_access_context(db, room_id=room_id, user=actor)
+    require_room_member(access_context)
+
+    if access_context.room.owner_user_id != actor.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only the room owner can delete this room.",
+        )
+
+    conversation = await db.get(Conversation, room_id)
+    if conversation is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Room not found.",
+        )
+
+    await db.delete(conversation)
+    await db.commit()
+
+    return ActionResponse(success=True, message="Room deleted permanently.")
 
 
 async def get_room_summary(

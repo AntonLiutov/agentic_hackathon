@@ -52,12 +52,26 @@ export type RoomInvitation = {
   created_at: string;
 };
 
+export type RoomManagementInvitation = {
+  id: string;
+  invitee_user_id: string;
+  invitee_username: string;
+  inviter_username: string | null;
+  status: "pending" | "accepted" | "declined" | "revoked";
+  created_at: string;
+  message: string | null;
+};
+
 export type RoomListResponse = {
   rooms: RoomSummary[];
 };
 
 export type RoomInvitationListResponse = {
   invitations: RoomInvitation[];
+};
+
+export type RoomManagementInvitationListResponse = {
+  invitations: RoomManagementInvitation[];
 };
 
 export type RoomMemberListResponse = {
@@ -99,6 +113,8 @@ export const roomsApi = {
       method: "POST",
     }),
   listInvitations: () => apiRequest<RoomInvitationListResponse>("/api/rooms/invitations/mine"),
+  listManagementInvitations: (roomId: string) =>
+    apiRequest<RoomManagementInvitationListResponse>(`/api/rooms/${roomId}/invitations`),
   invite: (roomId: string, payload: CreateInvitationPayload) =>
     apiRequest<RoomInvitation>(`/api/rooms/${roomId}/invitations`, {
       method: "POST",
@@ -108,6 +124,14 @@ export const roomsApi = {
     apiRequest<RoomMemberListResponse>(`/api/rooms/${roomId}/members`),
   listBans: (roomId: string) =>
     apiRequest<RoomBanListResponse>(`/api/rooms/${roomId}/bans`),
+  grantAdmin: (roomId: string, memberUserId: string) =>
+    apiRequest<{ success: boolean; message: string }>(`/api/rooms/${roomId}/admins/${memberUserId}`, {
+      method: "POST",
+    }),
+  revokeAdmin: (roomId: string, adminUserId: string) =>
+    apiRequest<{ success: boolean; message: string }>(`/api/rooms/${roomId}/admins/${adminUserId}`, {
+      method: "DELETE",
+    }),
   removeMember: (roomId: string, memberUserId: string) =>
     apiRequest<{ success: boolean; message: string }>(
       `/api/rooms/${roomId}/members/${memberUserId}`,
@@ -115,6 +139,14 @@ export const roomsApi = {
         method: "DELETE",
       },
     ),
+  unbanUser: (roomId: string, bannedUserId: string) =>
+    apiRequest<{ success: boolean; message: string }>(`/api/rooms/${roomId}/bans/${bannedUserId}`, {
+      method: "DELETE",
+    }),
+  deleteRoom: (roomId: string) =>
+    apiRequest<{ success: boolean; message: string }>(`/api/rooms/${roomId}`, {
+      method: "DELETE",
+    }),
   acceptInvitation: (invitationId: string) =>
     apiRequest<RoomSummary>(`/api/rooms/invitations/${invitationId}/accept`, {
       method: "POST",

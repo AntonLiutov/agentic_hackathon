@@ -232,6 +232,7 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
+  window.localStorage.clear();
   fetchMock.mockReset();
   MockWebSocket.reset();
   vi.unstubAllGlobals();
@@ -286,6 +287,167 @@ describe("App routes", () => {
       ).toBeInTheDocument();
     });
     expect(screen.getByText("preview@agentic.chat")).toBeInTheDocument();
+  });
+
+  it("restores the last selected room after a reload", async () => {
+    window.localStorage.setItem("agentic_selected_room_id", "room-random");
+
+    fetchMock.mockImplementation(async (input, init) => {
+      const url = typeof input === "string" ? input : input.toString();
+
+      if (url.endsWith("/api/auth/me")) {
+        return new Response(
+          JSON.stringify({
+            user: {
+              id: "user-1",
+              username: "Preview User",
+              email: "preview@agentic.chat",
+            },
+          }),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          },
+        );
+      }
+
+      if (url.includes("/api/rooms/mine")) {
+        return new Response(
+          JSON.stringify({
+            rooms: [
+              {
+                id: "room-engineering",
+                name: "engineering-room",
+                description: "Coordination room for the main launch.",
+                visibility: "public",
+                owner_user_id: "user-1",
+                member_count: 4,
+                is_member: true,
+                is_owner: true,
+                is_admin: true,
+                is_banned: false,
+                can_join: false,
+                can_leave: false,
+                can_manage_members: true,
+                joined_at: "2026-04-18T08:00:00Z",
+              },
+              {
+                id: "room-random",
+                name: "random",
+                description: "General room for the wider workspace.",
+                visibility: "public",
+                owner_user_id: "user-2",
+                member_count: 7,
+                is_member: true,
+                is_owner: false,
+                is_admin: false,
+                is_banned: false,
+                can_join: false,
+                can_leave: true,
+                can_manage_members: false,
+                joined_at: "2026-04-18T09:00:00Z",
+              },
+            ],
+          }),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          },
+        );
+      }
+
+      if (url.includes("/api/rooms/public")) {
+        return new Response(JSON.stringify({ rooms: [] }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      if (url.endsWith("/api/rooms/invitations/mine")) {
+        return new Response(JSON.stringify({ invitations: [] }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      if (url.endsWith("/api/dms/mine")) {
+        return new Response(JSON.stringify({ direct_messages: [] }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      if (url.endsWith("/api/friends")) {
+        return new Response(JSON.stringify({ friends: [] }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      if (url.endsWith("/api/friends/requests")) {
+        return new Response(
+          JSON.stringify({
+            incoming_requests: [],
+            outgoing_requests: [],
+          }),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          },
+        );
+      }
+
+      if (url.endsWith("/api/blocks")) {
+        return new Response(JSON.stringify({ blocked_users: [] }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      if (url.endsWith("/api/rooms/room-random/members")) {
+        return new Response(
+          JSON.stringify({
+            members: [
+              {
+                id: "user-2",
+                username: "room.owner",
+                joined_at: "2026-04-18T08:00:00Z",
+                is_owner: true,
+                is_admin: true,
+                can_remove: false,
+                presence_status: "offline",
+                friendship_state: "none",
+              },
+              {
+                id: "user-1",
+                username: "Preview User",
+                joined_at: "2026-04-18T09:00:00Z",
+                is_owner: false,
+                is_admin: false,
+                can_remove: false,
+                presence_status: "online",
+                friendship_state: "self",
+              },
+            ],
+          }),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          },
+        );
+      }
+
+      return new Response(JSON.stringify({ detail: "Unhandled request in test." }), {
+        status: 500,
+        headers: { "Content-Type": "application/json" },
+      });
+    });
+
+    renderRoutes(["/app/chats"]);
+
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { level: 1, name: "#random" })).toBeInTheDocument();
+    });
   });
 
   it("joins a public room from the sidebar", async () => {
@@ -607,6 +769,436 @@ describe("App routes", () => {
     });
   });
 
+  it("refreshes room members live when a room update event arrives", async () => {
+    let myRooms = [
+      {
+        id: "room-engineering",
+        name: "engineering-room",
+        description: "Coordination room for the main launch.",
+        visibility: "public",
+        owner_user_id: "user-1",
+        member_count: 4,
+        is_member: true,
+        is_owner: true,
+        is_admin: true,
+        is_banned: false,
+        can_join: false,
+        can_leave: false,
+        can_manage_members: true,
+        joined_at: "2026-04-18T08:00:00Z",
+      },
+    ];
+    let publicRooms = [...myRooms];
+    let members = [
+      {
+        id: "user-1",
+        username: "Preview User",
+        joined_at: "2026-04-18T08:00:00Z",
+        is_owner: true,
+        is_admin: true,
+        can_remove: false,
+        presence_status: "online",
+        friendship_state: "self",
+      },
+    ];
+
+    fetchMock.mockImplementation(async (input, init) => {
+      const url = typeof input === "string" ? input : input.toString();
+
+      if (url.endsWith("/api/auth/me")) {
+        return new Response(
+          JSON.stringify({
+            user: {
+              id: "user-1",
+              username: "Preview User",
+              email: "preview@agentic.chat",
+            },
+          }),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          },
+        );
+      }
+
+      if (url.includes("/api/rooms/mine")) {
+        return new Response(JSON.stringify({ rooms: myRooms }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      if (url.includes("/api/rooms/public")) {
+        return new Response(JSON.stringify({ rooms: publicRooms }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      if (url.endsWith("/api/rooms/invitations/mine")) {
+        return new Response(JSON.stringify({ invitations: [] }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      if (url.endsWith("/api/dms/mine")) {
+        return new Response(JSON.stringify({ direct_messages: [] }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      if (url.endsWith("/api/friends")) {
+        return new Response(JSON.stringify({ friends: [] }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      if (url.endsWith("/api/friends/requests")) {
+        return new Response(
+          JSON.stringify({
+            incoming_requests: [],
+            outgoing_requests: [],
+          }),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          },
+        );
+      }
+
+      if (url.endsWith("/api/blocks")) {
+        return new Response(JSON.stringify({ blocked_users: [] }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      if (url.endsWith("/api/rooms/room-engineering/members")) {
+        return new Response(
+          JSON.stringify({
+            members,
+          }),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          },
+        );
+      }
+
+      if (url.endsWith("/api/rooms/room-engineering/bans")) {
+        return new Response(JSON.stringify({ bans: [] }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      if (url.includes("/api/conversations/room-engineering/messages")) {
+        return new Response(
+          JSON.stringify({
+            conversation_id: "room-engineering",
+            sequence_head: 0,
+            oldest_loaded_sequence: null,
+            newest_loaded_sequence: null,
+            next_before_sequence: null,
+            has_older: false,
+            messages: [],
+          }),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          },
+        );
+      }
+
+      if (url.endsWith("/api/conversations/room-engineering/read") && init?.method === "POST") {
+        return new Response(
+          JSON.stringify({
+            conversation_id: "room-engineering",
+            last_read_sequence_number: 0,
+            unread_count: 0,
+          }),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          },
+        );
+      }
+
+      return new Response(JSON.stringify({ detail: "Unhandled request in test." }), {
+        status: 500,
+        headers: { "Content-Type": "application/json" },
+      });
+    });
+
+    renderRoutes(["/app/chats"]);
+
+    await waitFor(() => {
+      expect(screen.getByText("Preview User")).toBeInTheDocument();
+    });
+
+    myRooms = [
+      {
+        ...myRooms[0],
+        member_count: 5,
+      },
+    ];
+    publicRooms = [...myRooms];
+    members = [
+      ...members,
+      {
+        id: "user-2",
+        username: "new.live.member",
+        joined_at: "2026-04-18T09:00:00Z",
+        is_owner: false,
+        is_admin: false,
+        can_remove: true,
+        presence_status: "online",
+        friendship_state: "none",
+      },
+    ];
+
+    await act(async () => {
+      MockWebSocket.instances.find((socket) => socket.url.endsWith("/ws/inbox"))?.emit({
+        type: "rooms.updated",
+      });
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText("new.live.member")).toBeInTheDocument();
+      expect(screen.getAllByText("5").length).toBeGreaterThan(0);
+    });
+  });
+
+  it("opens the manage room modal and unbans a user", async () => {
+    let bans = [
+      {
+        id: "ban-1",
+        user_id: "user-8",
+        username: "mike",
+        banned_at: "2026-04-19T08:00:00Z",
+        banned_by_username: "Preview User",
+        reason: "Removed by a room admin.",
+      },
+    ];
+
+    fetchMock.mockImplementation(async (input, init) => {
+      const url = typeof input === "string" ? input : input.toString();
+
+      if (url.endsWith("/api/auth/me")) {
+        return new Response(
+          JSON.stringify({
+            user: {
+              id: "user-1",
+              username: "Preview User",
+              email: "preview@agentic.chat",
+            },
+          }),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          },
+        );
+      }
+
+      if (url.includes("/api/rooms/mine")) {
+        return new Response(
+          JSON.stringify({
+            rooms: [
+              {
+                id: "room-engineering",
+                name: "engineering-room",
+                description: "Coordination room for the main launch.",
+                visibility: "private",
+                owner_user_id: "user-1",
+                member_count: 2,
+                is_member: true,
+                is_owner: true,
+                is_admin: true,
+                is_banned: false,
+                can_join: false,
+                can_leave: false,
+                can_manage_members: true,
+                joined_at: "2026-04-18T08:00:00Z",
+                unread_count: 0,
+              },
+            ],
+          }),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          },
+        );
+      }
+
+      if (url.includes("/api/rooms/public")) {
+        return new Response(JSON.stringify({ rooms: [] }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      if (url.endsWith("/api/rooms/invitations/mine")) {
+        return new Response(JSON.stringify({ invitations: [] }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      if (url.endsWith("/api/dms/mine")) {
+        return new Response(JSON.stringify({ direct_messages: [] }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      if (url.endsWith("/api/friends")) {
+        return new Response(JSON.stringify({ friends: [] }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      if (url.endsWith("/api/friends/requests")) {
+        return new Response(
+          JSON.stringify({ incoming_requests: [], outgoing_requests: [] }),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          },
+        );
+      }
+
+      if (url.endsWith("/api/blocks")) {
+        return new Response(JSON.stringify({ blocked_users: [] }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      if (url.endsWith("/api/rooms/room-engineering/members")) {
+        return new Response(
+          JSON.stringify({
+            members: [
+              {
+                id: "user-1",
+                username: "Preview User",
+                joined_at: "2026-04-18T08:00:00Z",
+                is_owner: true,
+                is_admin: true,
+                can_remove: false,
+                friendship_state: "self",
+                presence_status: "online",
+              },
+              {
+                id: "user-2",
+                username: "room.member",
+                joined_at: "2026-04-18T08:10:00Z",
+                is_owner: false,
+                is_admin: false,
+                can_remove: true,
+                friendship_state: "none",
+                presence_status: "offline",
+              },
+            ],
+          }),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          },
+        );
+      }
+
+      if (url.endsWith("/api/rooms/room-engineering/bans")) {
+        return new Response(JSON.stringify({ bans }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      if (url.endsWith("/api/rooms/room-engineering/invitations")) {
+        return new Response(JSON.stringify({ invitations: [] }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      if (url.includes("/api/conversations/room-engineering/messages")) {
+        return new Response(
+          JSON.stringify({
+            conversation_id: "room-engineering",
+            sequence_head: 0,
+            oldest_loaded_sequence: null,
+            newest_loaded_sequence: null,
+            next_before_sequence: null,
+            has_older: false,
+            messages: [],
+          }),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          },
+        );
+      }
+
+      if (url.endsWith("/api/conversations/room-engineering/read") && init?.method === "POST") {
+        return new Response(
+          JSON.stringify({
+            conversation_id: "room-engineering",
+            last_read_sequence_number: 0,
+            unread_count: 0,
+          }),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          },
+        );
+      }
+
+      if (url.endsWith("/api/rooms/room-engineering/bans/user-8") && init?.method === "DELETE") {
+        bans = [];
+        return new Response(
+          JSON.stringify({
+            success: true,
+            message: "User removed from the room ban list.",
+          }),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          },
+        );
+      }
+
+      return new Response(JSON.stringify({ detail: "Unhandled request in test." }), {
+        status: 500,
+        headers: { "Content-Type": "application/json" },
+      });
+    });
+
+    renderRoutes(["/app/chats"]);
+
+    await waitFor(() => {
+      expect(
+        screen.getByRole("heading", { level: 1, name: "#engineering-room" }),
+      ).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getAllByRole("button", { name: "Manage room" })[0]);
+
+    await waitFor(() => {
+      expect(screen.getByRole("dialog")).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole("tab", { name: "Banned users" }));
+    fireEvent.click(screen.getByRole("button", { name: "Unban" }));
+
+    await waitFor(() => {
+      expect(screen.getByText("User removed from the room ban list.")).toBeInTheDocument();
+    });
+  });
+
   it("navigates to the chat workspace when a room is clicked from contacts", async () => {
     fetchMock.mockImplementation(async (input, init) => {
       const url = typeof input === "string" ? input : input.toString();
@@ -877,6 +1469,13 @@ describe("App routes", () => {
         });
       }
 
+      if (url.endsWith("/api/rooms/room-engineering/invitations")) {
+        return new Response(JSON.stringify({ invitations: [] }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
       if (url.endsWith("/api/rooms/room-engineering/members") && (!init?.method || init.method === "GET")) {
         return new Response(JSON.stringify({ members }), {
           status: 200,
@@ -889,6 +1488,38 @@ describe("App routes", () => {
           status: 200,
           headers: { "Content-Type": "application/json" },
         });
+      }
+
+      if (url.includes("/api/conversations/room-engineering/messages")) {
+        return new Response(
+          JSON.stringify({
+            conversation_id: "room-engineering",
+            sequence_head: 0,
+            oldest_loaded_sequence: null,
+            newest_loaded_sequence: null,
+            next_before_sequence: null,
+            has_older: false,
+            messages: [],
+          }),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          },
+        );
+      }
+
+      if (url.endsWith("/api/conversations/room-engineering/read") && init?.method === "POST") {
+        return new Response(
+          JSON.stringify({
+            conversation_id: "room-engineering",
+            last_read_sequence_number: 0,
+            unread_count: 0,
+          }),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          },
+        );
       }
 
       if (url.endsWith("/api/rooms/room-engineering/members/user-2") && init?.method === "DELETE") {
@@ -936,19 +1567,22 @@ describe("App routes", () => {
       expect(screen.getByText("guest.user")).toBeInTheDocument();
     });
 
-    fireEvent.click(screen.getByRole("button", { name: "Remove" }));
+    fireEvent.click(screen.getAllByRole("button", { name: "Manage room" })[0]);
+    await waitFor(() => {
+      expect(screen.getByRole("dialog")).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Remove from room" }));
 
     await waitFor(() => {
       expect(
         screen.getByText("Member removed from the room and banned from rejoining."),
       ).toBeInTheDocument();
-      expect(screen.queryByRole("button", { name: "Remove" })).not.toBeInTheDocument();
       expect(screen.getByText("By Preview User")).toBeInTheDocument();
       expect(screen.getByText("Removed by a room admin.")).toBeInTheDocument();
     });
   });
 
-  it("opens a direct message from the contacts page", async () => {
+  it("opens a direct message from the friend list on the contacts page", async () => {
     let directMessages = [
       {
         id: "dm-preview",
@@ -958,6 +1592,16 @@ describe("App routes", () => {
         created_at: "2026-04-18T09:00:00Z",
         is_initiator: false,
         can_message: true,
+        unread_count: 0,
+      },
+    ];
+    let friends = [
+      {
+        friendship_id: "friendship-1",
+        user_id: "user-3",
+        username: "new.friend",
+        friends_since: "2026-04-18T08:30:00Z",
+        presence_status: "online",
       },
     ];
 
@@ -1009,7 +1653,7 @@ describe("App routes", () => {
       }
 
       if (url.endsWith("/api/friends") && (!init?.method || init.method === "GET")) {
-        return new Response(JSON.stringify({ friends: [] }), {
+        return new Response(JSON.stringify({ friends }), {
           status: 200,
           headers: { "Content-Type": "application/json" },
         });
@@ -1028,6 +1672,45 @@ describe("App routes", () => {
         );
       }
 
+      if (url.endsWith("/api/blocks") && (!init?.method || init.method === "GET")) {
+        return new Response(JSON.stringify({ blocked_users: [] }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      if (url.endsWith("/api/conversations/dm-preview/messages")) {
+        return new Response(
+          JSON.stringify({
+            conversation_id: "dm-preview",
+            sequence_head: 0,
+            oldest_loaded_sequence: null,
+            newest_loaded_sequence: null,
+            next_before_sequence: null,
+            has_older: false,
+            messages: [],
+          }),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          },
+        );
+      }
+
+      if (url.endsWith("/api/conversations/dm-preview/read") && init?.method === "POST") {
+        return new Response(
+          JSON.stringify({
+            conversation_id: "dm-preview",
+            last_read_sequence_number: 0,
+            unread_count: 0,
+          }),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          },
+        );
+      }
+
       if (url.endsWith("/api/dms") && init?.method === "POST") {
         const openedDirectMessage = {
           id: "dm-new",
@@ -1037,6 +1720,7 @@ describe("App routes", () => {
           created_at: "2026-04-18T10:00:00Z",
           is_initiator: true,
           can_message: true,
+          unread_count: 0,
         };
         directMessages = [...directMessages, openedDirectMessage];
 
@@ -1044,6 +1728,38 @@ describe("App routes", () => {
           status: 201,
           headers: { "Content-Type": "application/json" },
         });
+      }
+
+      if (url.endsWith("/api/conversations/dm-new/messages")) {
+        return new Response(
+          JSON.stringify({
+            conversation_id: "dm-new",
+            sequence_head: 0,
+            oldest_loaded_sequence: null,
+            newest_loaded_sequence: null,
+            next_before_sequence: null,
+            has_older: false,
+            messages: [],
+          }),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          },
+        );
+      }
+
+      if (url.endsWith("/api/conversations/dm-new/read") && init?.method === "POST") {
+        return new Response(
+          JSON.stringify({
+            conversation_id: "dm-new",
+            last_read_sequence_number: 0,
+            unread_count: 0,
+          }),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          },
+        );
       }
 
       return new Response(JSON.stringify({ detail: "Unhandled request in test." }), {
@@ -1056,14 +1772,16 @@ describe("App routes", () => {
 
     await waitFor(() => {
       expect(screen.getAllByRole("heading", { name: "Direct messages" }).length).toBeGreaterThan(0);
-      expect(screen.getByRole("button", { name: "Open direct message" })).toBeInTheDocument();
+      expect(screen.getByText("new.friend")).toBeInTheDocument();
       expect(screen.getByRole("button", { name: /existing\.friend/i })).toBeInTheDocument();
     });
 
-    fireEvent.change(screen.getAllByLabelText("Username")[0], {
-      target: { value: "new.friend" },
-    });
-    fireEvent.click(screen.getByRole("button", { name: "Open direct message" }));
+    const newFriendListItem = screen.getByText("new.friend").closest(".contacts-list-item");
+    expect(newFriendListItem).not.toBeNull();
+
+    if (newFriendListItem) {
+      fireEvent.click(within(newFriendListItem).getByRole("button", { name: "Open DM" }));
+    }
 
     await waitFor(() => {
       expect(screen.getByText("Direct message ready with new.friend.")).toBeInTheDocument();
@@ -1231,8 +1949,7 @@ describe("App routes", () => {
       expect(screen.getByText("pending.friend")).toBeInTheDocument();
     });
 
-    const usernameInputs = screen.getAllByLabelText("Username");
-    fireEvent.change(usernameInputs[1], {
+    fireEvent.change(screen.getByLabelText("Username"), {
       target: { value: "new.friend" },
     });
     fireEvent.change(screen.getByLabelText("Message"), {
@@ -1596,7 +2313,9 @@ describe("App routes", () => {
     fireEvent.click(screen.getByRole("link", { name: /Contacts/i }));
 
     await waitFor(() => {
-      expect(screen.getByText("No direct messages yet. Open your first one by username.")).toBeInTheDocument();
+      expect(
+        screen.getByText("No direct messages yet. Open your first one from the friend list."),
+      ).toBeInTheDocument();
       expect(screen.getByText("live.friend")).toBeInTheDocument();
     });
 
@@ -1758,7 +2477,7 @@ describe("App routes", () => {
 
     await waitFor(() => {
       expect(
-        screen.getByText("No direct messages yet. Open your first one by username."),
+        screen.getByText("No direct messages yet. Open your first one from the friend list."),
       ).toBeInTheDocument();
     });
 

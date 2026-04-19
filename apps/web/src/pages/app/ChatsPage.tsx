@@ -18,7 +18,14 @@ import {
   type ConversationMessage,
 } from "../../shared/api/messages";
 import { useConversationRealtime } from "../../shared/realtime/useConversationRealtime";
-import { roomsApi, type RoomBan, type RoomMember } from "../../shared/api/rooms";
+import {
+  roomsApi,
+  type RoomBan,
+  type RoomManagementInvitation,
+  type RoomMember,
+} from "../../shared/api/rooms";
+
+type ManageRoomTab = "members" | "admins" | "bans" | "invitations" | "settings";
 
 function formatMessageTime(value: string) {
   return new Date(value).toLocaleTimeString([], {
@@ -93,11 +100,37 @@ export function ChatsPage() {
   const [requestingFriendId, setRequestingFriendId] = useState<string | null>(null);
   const [blockingMemberId, setBlockingMemberId] = useState<string | null>(null);
   const [updatingMessageId, setUpdatingMessageId] = useState<number | null>(null);
+  const [isManageModalOpen, setIsManageModalOpen] = useState(false);
+  const [manageRoomTab, setManageRoomTab] = useState<ManageRoomTab>("members");
+  const [managementInvitations, setManagementInvitations] = useState<RoomManagementInvitation[]>([]);
+  const [isLoadingManagementInvitations, setIsLoadingManagementInvitations] = useState(false);
+  const [promotingMemberId, setPromotingMemberId] = useState<string | null>(null);
+  const [demotingAdminId, setDemotingAdminId] = useState<string | null>(null);
+  const [unbanningUserId, setUnbanningUserId] = useState<string | null>(null);
+  const [isDeletingRoom, setIsDeletingRoom] = useState(false);
   const messageListRef = useRef<HTMLDivElement | null>(null);
   const shouldAutoScrollRef = useRef(false);
   const pendingScrollRestoreRef = useRef<{ previousHeight: number; previousTop: number } | null>(
     null,
   );
+
+  const syncRoomPeopleState = useCallback(
+    async (activeRoomId: string, canManageMembers: boolean) => {
+      const [memberResponse, banResponse] = await Promise.all([
+        roomsApi.listMembers(activeRoomId),
+        canManageMembers ? roomsApi.listBans(activeRoomId) : Promise.resolve({ bans: [] }),
+      ]);
+
+      setMembers(memberResponse.members);
+      setBans(banResponse.bans);
+    },
+    [],
+  );
+
+  const syncManagementInvitations = useCallback(async (activeRoomId: string) => {
+    const invitationResponse = await roomsApi.listManagementInvitations(activeRoomId);
+    setManagementInvitations(invitationResponse.invitations);
+  }, []);
 
   const loadLatestMessages = useCallback(
     async (roomId: string) => {
@@ -151,6 +184,7 @@ export function ChatsPage() {
       if (!activeRoomId || !isMember) {
         setMembers([]);
         setBans([]);
+        setManagementInvitations([]);
         setIsLoadingPeople(false);
         return;
       }
@@ -158,17 +192,11 @@ export function ChatsPage() {
       setIsLoadingPeople(true);
 
       try {
-        const [memberResponse, banResponse] = await Promise.all([
-          roomsApi.listMembers(activeRoomId),
-          canManageMembers ? roomsApi.listBans(activeRoomId) : Promise.resolve({ bans: [] }),
-        ]);
+        await syncRoomPeopleState(activeRoomId, canManageMembers);
 
         if (isCancelled) {
           return;
         }
-
-        setMembers(memberResponse.members);
-        setBans(banResponse.bans);
       } catch (error) {
         if (isCancelled) {
           return;
@@ -193,7 +221,13 @@ export function ChatsPage() {
     return () => {
       isCancelled = true;
     };
-  }, [selectedRoom?.id, selectedRoom?.is_member, selectedRoom?.can_manage_members]);
+  }, [
+    refreshRooms,
+    selectedRoom?.can_manage_members,
+    selectedRoom?.id,
+    selectedRoom?.is_member,
+    syncRoomPeopleState,
+  ]);
 
   useEffect(() => {
     if (members.length === 0) {
@@ -207,6 +241,89 @@ export function ChatsPage() {
       })),
     );
   }, [members, setMany]);
+
+  useEffect(() => {
+    let isCancelled = false;
+
+    async function loadManagementInvitations() {
+      if (
+        !isManageModalOpen ||
+        !selectedRoom?.id ||
+        !selectedRoom.can_manage_members
+      ) {
+        if (!isManageModalOpen) {
+          setManagementInvitations([]);
+        }
+        return;
+      }
+
+      setIsLoadingManagementInvitations(true);
+
+      try {
+        await syncManagementInvitations(selectedRoom.id);
+      } catch (error) {
+        if (!isCancelled) {
+          setPanelError(getApiErrorMessage(error, "Unable to load room invitations right now."));
+        }
+      } finally {
+        if (!isCancelled) {
+          setIsLoadingManagementInvitations(false);
+        }
+      }
+    }
+
+    void loadManagementInvitations();
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [
+    isManageModalOpen,
+    selectedRoom?.can_manage_members,
+    selectedRoom?.id,
+    syncManagementInvitations,
+  ]);
+
+  useEffect(() => {
+    async function handleRoomsUpdated() {
+      if (!selectedRoom?.id || !selectedRoom.is_member) {
+        return;
+      }
+
+      try {
+        await syncRoomPeopleState(selectedRoom.id, selectedRoom.can_manage_members);
+
+        if (isManageModalOpen && selectedRoom.can_manage_members) {
+          await syncManagementInvitations(selectedRoom.id);
+        }
+      } catch (error) {
+        if (error instanceof ApiError && (error.status === 403 || error.status === 404)) {
+          await refreshRooms();
+          setPanelError("You no longer have access to that room.");
+          return;
+        }
+
+        setPanelError(getApiErrorMessage(error, "Unable to refresh room membership right now."));
+      }
+    }
+
+    function onRoomsUpdated() {
+      void handleRoomsUpdated();
+    }
+
+    window.addEventListener("agentic:rooms-updated", onRoomsUpdated);
+    return () => {
+      window.removeEventListener("agentic:rooms-updated", onRoomsUpdated);
+    };
+  }, [
+    isManageModalOpen,
+    refreshRooms,
+    selectedRoom?.can_manage_members,
+    selectedRoom?.id,
+    selectedRoom?.is_member,
+    syncManagementInvitations,
+    syncRoomPeopleState,
+  ]);
 
   useEffect(() => {
     let isCancelled = false;
@@ -332,6 +449,9 @@ export function ChatsPage() {
         username: inviteUsername,
         message: inviteMessage.trim() ? inviteMessage : undefined,
       });
+      if (selectedRoom.can_manage_members) {
+        await syncManagementInvitations(selectedRoom.id);
+      }
       setInviteUsername("");
       setInviteMessage("");
       setPanelNotice(`Invitation sent to ${inviteUsername}.`);
@@ -410,6 +530,92 @@ export function ChatsPage() {
       setPanelError(getApiErrorMessage(error, "Unable to remove that member right now."));
     } finally {
       setRemovingMemberId(null);
+    }
+  }
+
+  async function handlePromoteMember(member: RoomMember) {
+    if (!selectedRoom) {
+      return;
+    }
+
+    setPanelError(null);
+    setPanelNotice(null);
+    setPromotingMemberId(member.id);
+
+    try {
+      const response = await roomsApi.grantAdmin(selectedRoom.id, member.id);
+      setPanelNotice(response.message);
+      await refreshRooms();
+      await syncRoomPeopleState(selectedRoom.id, true);
+    } catch (error) {
+      setPanelError(getApiErrorMessage(error, "Unable to grant admin access right now."));
+    } finally {
+      setPromotingMemberId(null);
+    }
+  }
+
+  async function handleDemoteAdmin(member: RoomMember) {
+    if (!selectedRoom) {
+      return;
+    }
+
+    setPanelError(null);
+    setPanelNotice(null);
+    setDemotingAdminId(member.id);
+
+    try {
+      const response = await roomsApi.revokeAdmin(selectedRoom.id, member.id);
+      setPanelNotice(response.message);
+      await refreshRooms();
+      await syncRoomPeopleState(selectedRoom.id, true);
+    } catch (error) {
+      setPanelError(getApiErrorMessage(error, "Unable to remove admin access right now."));
+    } finally {
+      setDemotingAdminId(null);
+    }
+  }
+
+  async function handleUnbanUser(ban: RoomBan) {
+    if (!selectedRoom) {
+      return;
+    }
+
+    setPanelError(null);
+    setPanelNotice(null);
+    setUnbanningUserId(ban.user_id);
+
+    try {
+      const response = await roomsApi.unbanUser(selectedRoom.id, ban.user_id);
+      setPanelNotice(response.message);
+      await refreshRooms();
+      await syncRoomPeopleState(selectedRoom.id, true);
+    } catch (error) {
+      setPanelError(getApiErrorMessage(error, "Unable to remove that room ban right now."));
+    } finally {
+      setUnbanningUserId(null);
+    }
+  }
+
+  async function handleDeleteRoom() {
+    if (!selectedRoom) {
+      return;
+    }
+
+    setPanelError(null);
+    setPanelNotice(null);
+    setIsDeletingRoom(true);
+
+    try {
+      const response = await roomsApi.deleteRoom(selectedRoom.id);
+      setIsManageModalOpen(false);
+      setManageRoomTab("members");
+      setManagementInvitations([]);
+      await refreshRooms();
+      setPanelNotice(response.message);
+    } catch (error) {
+      setPanelError(getApiErrorMessage(error, "Unable to delete that room right now."));
+    } finally {
+      setIsDeletingRoom(false);
     }
   }
 
@@ -575,6 +781,9 @@ export function ChatsPage() {
     }, []),
   });
 
+  const adminMembers = members.filter((member) => member.is_admin);
+  const canShowManageRoom = selectedRoom?.can_manage_members ?? false;
+
   if (!selectedRoom) {
     return (
       <section className="chat-workspace card">
@@ -703,6 +912,18 @@ export function ChatsPage() {
                 ? "reconnecting"
                 : "connecting"}
           </span>
+          {canShowManageRoom ? (
+            <button
+              className="ghost-button"
+              type="button"
+              onClick={() => {
+                setManageRoomTab("members");
+                setIsManageModalOpen(true);
+              }}
+            >
+              Manage room
+            </button>
+          ) : null}
           {selectedRoom.can_leave ? (
             <button
               className="ghost-button"
@@ -720,6 +941,312 @@ export function ChatsPage() {
 
       {panelError ? <p className="auth-error">{panelError}</p> : null}
       {panelNotice ? <p className="auth-success">{panelNotice}</p> : null}
+
+      {isManageModalOpen && canShowManageRoom ? (
+        <div
+          className="modal-overlay"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="manage-room-title"
+        >
+          <div className="modal-card">
+            <header className="modal-header">
+              <div>
+                <p className="session-card-kicker">Manage room</p>
+                <h2 id="manage-room-title">#{selectedRoom.name}</h2>
+              </div>
+              <button
+                className="ghost-button"
+                type="button"
+                onClick={() => {
+                  setIsManageModalOpen(false);
+                }}
+              >
+                Close
+              </button>
+            </header>
+
+            <div className="modal-tabs" role="tablist" aria-label="Manage room sections">
+              {[
+                ["members", "Members"],
+                ["admins", "Admins"],
+                ["bans", "Banned users"],
+                ["invitations", "Invitations"],
+                ["settings", "Settings"],
+              ].map(([tabId, label]) => (
+                <button
+                  key={tabId}
+                  className={manageRoomTab === tabId ? "modal-tab is-active" : "modal-tab"}
+                  type="button"
+                  role="tab"
+                  aria-selected={manageRoomTab === tabId}
+                  onClick={() => {
+                    setManageRoomTab(tabId as ManageRoomTab);
+                  }}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+
+            <div className="modal-body">
+              {manageRoomTab === "members" ? (
+                <div className="modal-section">
+                  <div className="modal-section-header">
+                    <div>
+                      <p className="session-card-kicker">Members</p>
+                      <h3>Room member actions</h3>
+                    </div>
+                    <span className="sidebar-muted">{members.length}</span>
+                  </div>
+                  <ul className="room-people-list">
+                    {members.map((member) => (
+                      <li key={member.id} className="room-people-item room-people-item--member">
+                        <div className="room-person-summary">
+                          <strong>{member.username}</strong>
+                          <small className="presence-meta">
+                            <span>
+                              {member.is_owner ? "Owner" : member.is_admin ? "Admin" : "Member"}
+                            </span>
+                            <span className="presence-inline">
+                              <span
+                                className={`presence-dot presence-dot--${
+                                  getPresence(member.id) ?? member.presence_status ?? "offline"
+                                }`}
+                              />
+                              {formatPresenceLabel(
+                                getPresence(member.id) ?? member.presence_status ?? "offline",
+                              )}
+                            </span>
+                          </small>
+                        </div>
+                        <div className="room-member-actions">
+                          {!member.is_owner && !member.is_admin && selectedRoom.is_owner ? (
+                            <button
+                              className="ghost-button sidebar-action-button"
+                              type="button"
+                              disabled={promotingMemberId === member.id}
+                              onClick={() => {
+                                void handlePromoteMember(member);
+                              }}
+                            >
+                              {promotingMemberId === member.id ? "Saving..." : "Make admin"}
+                            </button>
+                          ) : null}
+                          {member.can_remove ? (
+                            <button
+                              className="ghost-button sidebar-action-button"
+                              type="button"
+                              disabled={removingMemberId === member.id}
+                              onClick={() => {
+                                void handleRemoveMember(member);
+                              }}
+                            >
+                              {removingMemberId === member.id ? "Removing..." : "Remove from room"}
+                            </button>
+                          ) : null}
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
+
+              {manageRoomTab === "admins" ? (
+                <div className="modal-section">
+                  <div className="modal-section-header">
+                    <div>
+                      <p className="session-card-kicker">Admins</p>
+                      <h3>Current administrators</h3>
+                    </div>
+                    <span className="sidebar-muted">{adminMembers.length}</span>
+                  </div>
+                  <ul className="room-people-list">
+                    {adminMembers.map((member) => (
+                      <li key={member.id} className="room-people-item room-people-item--member">
+                        <div className="room-person-summary">
+                          <strong>{member.username}</strong>
+                          <small>{member.is_owner ? "Owner and permanent admin" : "Room admin"}</small>
+                        </div>
+                        <div className="room-member-actions">
+                          {!member.is_owner && member.id !== user?.id ? (
+                            <button
+                              className="ghost-button sidebar-action-button"
+                              type="button"
+                              disabled={demotingAdminId === member.id}
+                              onClick={() => {
+                                void handleDemoteAdmin(member);
+                              }}
+                            >
+                              {demotingAdminId === member.id ? "Saving..." : "Remove admin"}
+                            </button>
+                          ) : (
+                            <span className="sidebar-muted">Owner rights cannot be removed</span>
+                          )}
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
+
+              {manageRoomTab === "bans" ? (
+                <div className="modal-section">
+                  <div className="modal-section-header">
+                    <div>
+                      <p className="session-card-kicker">Banned users</p>
+                      <h3>Room ban list</h3>
+                    </div>
+                    <span className="sidebar-muted">{bans.length}</span>
+                  </div>
+                  {bans.length === 0 ? (
+                    <p>No banned users in this room right now.</p>
+                  ) : (
+                    <ul className="room-people-list">
+                      {bans.map((ban) => (
+                        <li key={ban.id} className="room-people-item room-people-item--member">
+                          <div className="room-person-summary">
+                            <strong>{ban.username}</strong>
+                            <small>
+                              {ban.banned_by_username ? `By ${ban.banned_by_username}` : "Admin action"}
+                            </small>
+                            <small>{ban.reason ?? "Removed by a room admin."}</small>
+                          </div>
+                          <div className="room-member-actions">
+                            <button
+                              className="ghost-button sidebar-action-button"
+                              type="button"
+                              disabled={unbanningUserId === ban.user_id}
+                              onClick={() => {
+                                void handleUnbanUser(ban);
+                              }}
+                            >
+                              {unbanningUserId === ban.user_id ? "Saving..." : "Unban"}
+                            </button>
+                          </div>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              ) : null}
+
+              {manageRoomTab === "invitations" ? (
+                <div className="modal-section">
+                  <div className="modal-section-header">
+                    <div>
+                      <p className="session-card-kicker">Invitations</p>
+                      <h3>Private room invites</h3>
+                    </div>
+                    <span className="sidebar-muted">{managementInvitations.length}</span>
+                  </div>
+                  {selectedRoom.visibility === "private" ? (
+                    <form className="auth-form" onSubmit={handleInvite}>
+                      <label>
+                        <span>Username</span>
+                        <input
+                          type="text"
+                          placeholder="alice"
+                          value={inviteUsername}
+                          onChange={(event) => setInviteUsername(event.target.value)}
+                          minLength={3}
+                          maxLength={64}
+                          required
+                        />
+                      </label>
+                      <label>
+                        <span>Message</span>
+                        <input
+                          type="text"
+                          placeholder="Optional invitation note"
+                          value={inviteMessage}
+                          onChange={(event) => setInviteMessage(event.target.value)}
+                          maxLength={500}
+                        />
+                      </label>
+                      <button className="primary-button" type="submit" disabled={isSubmittingInvite}>
+                        {isSubmittingInvite ? "Sending invitation..." : "Invite user"}
+                      </button>
+                    </form>
+                  ) : (
+                    <p>Public rooms do not use invitation-based access.</p>
+                  )}
+                  {isLoadingManagementInvitations ? (
+                    <p>Loading room invitations...</p>
+                  ) : managementInvitations.length === 0 ? (
+                    <p>No room invitations have been issued yet.</p>
+                  ) : (
+                    <ul className="room-people-list">
+                      {managementInvitations.map((invitation) => (
+                        <li key={invitation.id} className="room-people-item room-people-item--member">
+                          <div className="room-person-summary">
+                            <strong>{invitation.invitee_username}</strong>
+                            <small>{invitation.status}</small>
+                            <small>{invitation.message ?? "No invitation note."}</small>
+                          </div>
+                          <span className="sidebar-muted">
+                            {invitation.inviter_username ?? "Unknown inviter"}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              ) : null}
+
+              {manageRoomTab === "settings" ? (
+                <div className="modal-section">
+                  <div className="modal-section-header">
+                    <div>
+                      <p className="session-card-kicker">Settings</p>
+                      <h3>Room ownership controls</h3>
+                    </div>
+                  </div>
+                  <dl className="session-meta">
+                    <div>
+                      <dt>Room name</dt>
+                      <dd>#{selectedRoom.name}</dd>
+                    </div>
+                    <div>
+                      <dt>Visibility</dt>
+                      <dd>{selectedRoom.visibility}</dd>
+                    </div>
+                    <div>
+                      <dt>Description</dt>
+                      <dd>{selectedRoom.description ?? "No description"}</dd>
+                    </div>
+                    <div>
+                      <dt>Owner</dt>
+                      <dd>{selectedRoom.is_owner ? "You" : "Room owner"}</dd>
+                    </div>
+                  </dl>
+                  {selectedRoom.is_owner ? (
+                    <div className="danger-zone">
+                      <p>
+                        Deleting the room permanently removes its messages and future governance state.
+                      </p>
+                      <button
+                        className="danger-button"
+                        type="button"
+                        disabled={isDeletingRoom}
+                        onClick={() => {
+                          void handleDeleteRoom();
+                        }}
+                      >
+                        {isDeletingRoom ? "Deleting room..." : "Delete room"}
+                      </button>
+                    </div>
+                  ) : (
+                    <p className="sidebar-muted">
+                      Only the room owner can delete the room.
+                    </p>
+                  )}
+                </div>
+              ) : null}
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       <div className="chat-room-layout">
         <div className="chat-room-main">
@@ -887,41 +1414,19 @@ export function ChatsPage() {
                 <dd>{selectedRoom.is_owner ? "Owner" : "Joined"}</dd>
               </div>
             </dl>
+            {canShowManageRoom ? (
+              <button
+                className="ghost-button"
+                type="button"
+                onClick={() => {
+                  setManageRoomTab("members");
+                  setIsManageModalOpen(true);
+                }}
+              >
+                Manage room
+              </button>
+            ) : null}
           </article>
-
-          {selectedRoom.visibility === "private" && selectedRoom.can_manage_members ? (
-            <article className="session-card">
-              <p className="session-card-kicker">Invitations</p>
-              <h2>Invite to this private room</h2>
-              <form className="auth-form" onSubmit={handleInvite}>
-                <label>
-                  <span>Username</span>
-                  <input
-                    type="text"
-                    placeholder="alice"
-                    value={inviteUsername}
-                    onChange={(event) => setInviteUsername(event.target.value)}
-                    minLength={3}
-                    maxLength={64}
-                    required
-                  />
-                </label>
-                <label>
-                  <span>Message</span>
-                  <input
-                    type="text"
-                    placeholder="Optional invitation note"
-                    value={inviteMessage}
-                    onChange={(event) => setInviteMessage(event.target.value)}
-                    maxLength={500}
-                  />
-                </label>
-                <button className="primary-button" type="submit" disabled={isSubmittingInvite}>
-                  {isSubmittingInvite ? "Sending invitation..." : "Invite user"}
-                </button>
-              </form>
-            </article>
-          ) : null}
 
           <article className="session-card room-people-card">
             <div className="room-context-card-header">
@@ -972,18 +1477,6 @@ export function ChatsPage() {
                           }}
                         >
                           {requestingFriendId === member.id ? "Sending..." : "Add friend"}
-                        </button>
-                      ) : null}
-                      {member.can_remove ? (
-                        <button
-                          className="ghost-button sidebar-action-button"
-                          type="button"
-                          disabled={removingMemberId === member.id}
-                          onClick={() => {
-                            void handleRemoveMember(member);
-                          }}
-                        >
-                          {removingMemberId === member.id ? "Removing..." : "Remove"}
                         </button>
                       ) : null}
                       {!member.is_owner && member.id !== user?.id && !isUserBlocked(member.id) ? (
