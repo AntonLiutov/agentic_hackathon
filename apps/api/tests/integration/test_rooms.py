@@ -4,7 +4,7 @@ from uuid import UUID
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 
-from app.db.models.conversation import ConversationMember, RoomBan
+from app.db.models.conversation import ConversationMember, RoomAdmin, RoomBan
 from app.db.models.identity import User
 
 
@@ -370,6 +370,85 @@ def test_room_membership_access_and_admin_removal_rules(auth_client: TestClient)
     )
     assert re_invite_response.status_code == 403
     assert re_invite_response.json()["detail"] == "This user cannot be invited to the room."
+
+
+def test_removed_admin_loses_admin_role_after_unban_and_rejoin(auth_client: TestClient) -> None:
+    _register_user(
+        auth_client,
+        email="owner-admin-reset@example.com",
+        username="owner.admin.reset",
+    )
+    room_response = auth_client.post(
+        "/api/rooms",
+        json={
+            "name": "admin-reset-room",
+            "description": "Ensure removed admins do not regain authority automatically.",
+            "visibility": "public",
+        },
+    )
+    assert room_response.status_code == 201
+    room_id = room_response.json()["id"]
+
+    auth_client.post("/api/auth/logout")
+    _register_user(
+        auth_client,
+        email="former-admin@example.com",
+        username="former.admin",
+    )
+
+    join_response = auth_client.post(f"/api/rooms/{room_id}/join")
+    assert join_response.status_code == 200
+
+    auth_client.post("/api/auth/logout")
+    _login_user(auth_client, email="owner-admin-reset@example.com")
+
+    current_members_response = auth_client.get(f"/api/rooms/{room_id}/members")
+    assert current_members_response.status_code == 200
+    former_admin = next(
+        member
+        for member in current_members_response.json()["members"]
+        if member["username"] == "former.admin"
+    )
+
+    grant_response = auth_client.post(f"/api/rooms/{room_id}/admins/{former_admin['id']}")
+    assert grant_response.status_code == 200
+
+    remove_response = auth_client.delete(f"/api/rooms/{room_id}/members/{former_admin['id']}")
+    assert remove_response.status_code == 200
+
+    session_factory = auth_client.app.state.database.session_factory
+    room_uuid = UUID(room_id)
+
+    async def _assert_admin_membership_removed() -> None:
+        async with session_factory() as session:
+            admin_membership = await session.get(
+                RoomAdmin,
+                {
+                    "room_conversation_id": room_uuid,
+                    "user_id": UUID(former_admin["id"]),
+                },
+            )
+            assert admin_membership is None
+
+    _run(_assert_admin_membership_removed())
+
+    unban_response = auth_client.delete(f"/api/rooms/{room_id}/bans/{former_admin['id']}")
+    assert unban_response.status_code == 200
+
+    auth_client.post("/api/auth/logout")
+    _login_user(auth_client, email="former-admin@example.com")
+
+    rejoin_response = auth_client.post(f"/api/rooms/{room_id}/join")
+    assert rejoin_response.status_code == 200
+    assert rejoin_response.json()["is_admin"] is False
+    assert rejoin_response.json()["can_manage_members"] is False
+
+    my_rooms_response = auth_client.get("/api/rooms/mine")
+    assert my_rooms_response.status_code == 200
+    room_summary = my_rooms_response.json()["rooms"][0]
+    assert room_summary["id"] == room_id
+    assert room_summary["is_admin"] is False
+    assert room_summary["can_manage_members"] is False
 
 
 def test_room_admin_management_and_owner_delete_rules(auth_client: TestClient) -> None:

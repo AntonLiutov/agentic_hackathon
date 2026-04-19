@@ -276,6 +276,71 @@ def test_message_history_supports_cursor_pagination(auth_client: TestClient) -> 
     assert [message["sequence_number"] for message in older_payload["messages"]] == [1, 2]
 
 
+def test_removed_room_member_loses_message_history_access_immediately(
+    auth_client: TestClient,
+) -> None:
+    _register_user(
+        auth_client,
+        email="ban-owner@example.com",
+        username="ban.owner",
+    )
+    room_response = auth_client.post(
+        "/api/rooms",
+        json={
+            "name": "ban-history-room",
+            "description": "Room for revoked-access history checks.",
+            "visibility": "public",
+        },
+    )
+    assert room_response.status_code == 201
+    room_id = room_response.json()["id"]
+
+    auth_client.post("/api/auth/logout")
+    _register_user(
+        auth_client,
+        email="ban-member@example.com",
+        username="ban.member",
+    )
+    join_response = auth_client.post(f"/api/rooms/{room_id}/join")
+    assert join_response.status_code == 200
+
+    create_message_response = auth_client.post(
+        f"/api/conversations/{room_id}/messages",
+        json={"body_text": "Message that should become inaccessible after removal."},
+    )
+    assert create_message_response.status_code == 201
+
+    auth_client.post("/api/auth/logout")
+    _login_user(auth_client, email="ban-owner@example.com")
+
+    member_lookup_response = auth_client.get(f"/api/rooms/{room_id}/members")
+    assert member_lookup_response.status_code == 200
+    removable_member = next(
+        member
+        for member in member_lookup_response.json()["members"]
+        if member["username"] == "ban.member"
+    )
+
+    remove_member_response = auth_client.delete(
+        f"/api/rooms/{room_id}/members/{removable_member['id']}"
+    )
+    assert remove_member_response.status_code == 200
+
+    auth_client.post("/api/auth/logout")
+    _login_user(auth_client, email="ban-member@example.com")
+
+    history_response = auth_client.get(f"/api/conversations/{room_id}/messages")
+    assert history_response.status_code == 404
+    assert history_response.json()["detail"] == "Conversation not found."
+
+    create_after_removal_response = auth_client.post(
+        f"/api/conversations/{room_id}/messages",
+        json={"body_text": "Trying to send after removal."},
+    )
+    assert create_after_removal_response.status_code == 404
+    assert create_after_removal_response.json()["detail"] == "Conversation not found."
+
+
 def test_unread_counts_increment_and_clear_when_conversation_is_opened(
     auth_client: TestClient,
 ) -> None:

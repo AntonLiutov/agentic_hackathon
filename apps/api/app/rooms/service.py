@@ -810,6 +810,16 @@ async def remove_room_member(
             detail="Room member not found.",
         )
 
+    admin_membership = await db.get(
+        RoomAdmin,
+        {
+            "room_conversation_id": room_id,
+            "user_id": member_user_id,
+        },
+    )
+    if admin_membership is not None:
+        await db.delete(admin_membership)
+
     await db.delete(membership)
 
     existing_ban = await _get_room_ban(db, room_id=room_id, user_id=member_user_id)

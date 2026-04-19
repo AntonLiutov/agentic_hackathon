@@ -972,6 +972,234 @@ describe("App routes", () => {
     });
   });
 
+  it("updates the owner room view live when an invitation is accepted", async () => {
+    let myRooms = [
+      {
+        id: "room-engineering",
+        name: "engineering-room",
+        description: "Coordination room for the main launch.",
+        visibility: "private",
+        owner_user_id: "user-1",
+        member_count: 1,
+        is_member: true,
+        is_owner: true,
+        is_admin: true,
+        is_banned: false,
+        can_join: false,
+        can_leave: false,
+        can_manage_members: true,
+        joined_at: "2026-04-18T08:00:00Z",
+      },
+    ];
+    let members = [
+      {
+        id: "user-1",
+        username: "Preview User",
+        joined_at: "2026-04-18T08:00:00Z",
+        is_owner: true,
+        is_admin: true,
+        can_remove: false,
+        presence_status: "online",
+        friendship_state: "self",
+      },
+    ];
+    let invitations = [
+      {
+        id: "invite-1",
+        invitee_user_id: "user-2",
+        invitee_username: "accepted.user",
+        inviter_username: "Preview User",
+        status: "pending",
+        created_at: "2026-04-19T19:00:00Z",
+        message: "Please join the room.",
+      },
+    ];
+
+    fetchMock.mockImplementation(async (input, init) => {
+      const url = typeof input === "string" ? input : input.toString();
+
+      if (url.endsWith("/api/auth/me")) {
+        return new Response(
+          JSON.stringify({
+            user: {
+              id: "user-1",
+              username: "Preview User",
+              email: "preview@agentic.chat",
+            },
+          }),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          },
+        );
+      }
+
+      if (url.includes("/api/rooms/mine")) {
+        return new Response(JSON.stringify({ rooms: myRooms }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      if (url.includes("/api/rooms/public")) {
+        return new Response(JSON.stringify({ rooms: [] }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      if (url.endsWith("/api/rooms/invitations/mine")) {
+        return new Response(JSON.stringify({ invitations: [] }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      if (url.endsWith("/api/dms/mine")) {
+        return new Response(JSON.stringify({ direct_messages: [] }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      if (url.endsWith("/api/friends")) {
+        return new Response(JSON.stringify({ friends: [] }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      if (url.endsWith("/api/friends/requests")) {
+        return new Response(
+          JSON.stringify({
+            incoming_requests: [],
+            outgoing_requests: [],
+          }),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          },
+        );
+      }
+
+      if (url.endsWith("/api/blocks")) {
+        return new Response(JSON.stringify({ blocked_users: [] }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      if (url.endsWith("/api/rooms/room-engineering/members")) {
+        return new Response(JSON.stringify({ members }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      if (url.endsWith("/api/rooms/room-engineering/bans")) {
+        return new Response(JSON.stringify({ bans: [] }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      if (url.endsWith("/api/rooms/room-engineering/invitations")) {
+        return new Response(JSON.stringify({ invitations }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      if (url.includes("/api/conversations/room-engineering/messages")) {
+        return new Response(
+          JSON.stringify({
+            conversation_id: "room-engineering",
+            sequence_head: 0,
+            oldest_loaded_sequence: null,
+            newest_loaded_sequence: null,
+            next_before_sequence: null,
+            has_older: false,
+            messages: [],
+          }),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          },
+        );
+      }
+
+      if (url.endsWith("/api/conversations/room-engineering/read") && init?.method === "POST") {
+        return new Response(
+          JSON.stringify({
+            conversation_id: "room-engineering",
+            last_read_sequence_number: 0,
+            unread_count: 0,
+          }),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          },
+        );
+      }
+
+      return new Response(JSON.stringify({ detail: "Unhandled request in test." }), {
+        status: 500,
+        headers: { "Content-Type": "application/json" },
+      });
+    });
+
+    renderRoutes(["/app/chats"]);
+
+    await waitFor(() => {
+      expect(screen.getByText("Preview User")).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getAllByRole("button", { name: "Manage room" })[0]);
+    fireEvent.click(screen.getByRole("tab", { name: "Invitations" }));
+
+    await waitFor(() => {
+      expect(screen.getByText("accepted.user")).toBeInTheDocument();
+    });
+
+    myRooms = [
+      {
+        ...myRooms[0],
+        member_count: 2,
+      },
+    ];
+    members = [
+      ...members,
+      {
+        id: "user-2",
+        username: "accepted.user",
+        joined_at: "2026-04-19T19:05:00Z",
+        is_owner: false,
+        is_admin: false,
+        can_remove: true,
+        presence_status: "offline",
+        friendship_state: "none",
+      },
+    ];
+    invitations = [];
+
+    await act(async () => {
+      MockWebSocket.instances.find((socket) => socket.url.endsWith("/ws/inbox"))?.emit({
+        type: "rooms.updated",
+      });
+    });
+
+    await waitFor(() => {
+      expect(screen.queryByText("Please join the room.")).not.toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole("tab", { name: "Members" }));
+
+    await waitFor(() => {
+      expect(screen.getAllByText("accepted.user").length).toBeGreaterThan(0);
+      expect(screen.getAllByText("2").length).toBeGreaterThan(0);
+    });
+  });
+
   it("opens the manage room modal and unbans a user", async () => {
     let bans = [
       {

@@ -193,5 +193,6 @@ This repository currently targets:
 - `SP3-01 Friendships`
 - `SP3-02 User-to-User Bans`
 - `SP3-03 Room Administration`
+- `SP3-04 Room Bans and Access Consistency`
 
-The next implementation step is `SP3-04 Room Bans and Access Consistency`.
+The next implementation step is `SP3-05 Attachments`.
