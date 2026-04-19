@@ -35,6 +35,27 @@ def _login_user(
     assert response.status_code == 200
 
 
+def _create_friendship(
+    client: TestClient,
+    *,
+    requester_email: str,
+    recipient_email: str,
+    recipient_username: str,
+) -> None:
+    _login_user(client, email=requester_email)
+    request_response = client.post(
+        "/api/friends/requests",
+        json={"username": recipient_username},
+    )
+    assert request_response.status_code == 201
+    client.post("/api/auth/logout")
+    _login_user(client, email=recipient_email)
+    accept_response = client.post(
+        f"/api/friends/requests/{request_response.json()['id']}/accept"
+    )
+    assert accept_response.status_code == 200
+
+
 def test_room_message_lifecycle_and_admin_delete(auth_client: TestClient) -> None:
     _register_user(auth_client, email="room-owner@example.com", username="room.owner")
     room_response = auth_client.post(
@@ -158,6 +179,13 @@ def test_direct_message_lifecycle_respects_author_permissions(auth_client: TestC
     _register_user(auth_client, email="dm-beta@example.com", username="dm.beta")
     auth_client.post("/api/auth/logout")
 
+    _create_friendship(
+        auth_client,
+        requester_email="dm-alpha@example.com",
+        recipient_email="dm-beta@example.com",
+        recipient_username="dm.beta",
+    )
+    auth_client.post("/api/auth/logout")
     _login_user(auth_client, email="dm-alpha@example.com")
     dm_response = auth_client.post("/api/dms", json={"username": "dm.beta"})
     assert dm_response.status_code == 201
@@ -290,6 +318,14 @@ def test_unread_counts_increment_and_clear_when_conversation_is_opened(
     refreshed_rooms_response = auth_client.get("/api/rooms/mine")
     assert refreshed_rooms_response.status_code == 200
     assert refreshed_rooms_response.json()["rooms"][0]["unread_count"] == 0
+
+    auth_client.post("/api/auth/logout")
+    _create_friendship(
+        auth_client,
+        requester_email="unread-owner@example.com",
+        recipient_email="unread-guest@example.com",
+        recipient_username="unread.guest",
+    )
 
     auth_client.post("/api/auth/logout")
     _login_user(auth_client, email="unread-owner@example.com")

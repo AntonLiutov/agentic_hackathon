@@ -13,6 +13,7 @@ import {
 import { getApiErrorMessage } from "../../shared/api/client";
 import { useDirectMessages } from "../../features/direct-messages/use-direct-messages";
 import { useFriends } from "../../features/friends/use-friends";
+import { type BlockedUserSummary } from "../../shared/api/blocks";
 import {
   type FriendRequestSummary,
   type FriendSummary,
@@ -78,12 +79,16 @@ export function ContactsPage() {
   const { setPanelContent } = useWorkspaceContextPanel();
   const {
     acceptFriendRequest,
+    blockedUsers,
+    blockUser,
     friends,
     incomingRequests,
+    isUserBlocked,
     outgoingRequests,
     rejectFriendRequest,
     removeFriend,
     sendFriendRequest,
+    unblockUser,
   } = useFriends();
   const {
     clearMessages: clearDirectMessageMessages,
@@ -98,7 +103,6 @@ export function ContactsPage() {
     selectedDirectMessageId,
     selectDirectMessage,
   } = useDirectMessages();
-  const [directMessageUsername, setDirectMessageUsername] = useState("");
   const [friendRequestUsername, setFriendRequestUsername] = useState("");
   const [friendRequestMessage, setFriendRequestMessage] = useState("");
   const [composeText, setComposeText] = useState("");
@@ -110,12 +114,13 @@ export function ContactsPage() {
   const [editingMessageId, setEditingMessageId] = useState<number | null>(null);
   const [isLoadingMessages, setIsLoadingMessages] = useState(false);
   const [isLoadingOlderMessages, setIsLoadingOlderMessages] = useState(false);
-  const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSubmittingFriendRequest, setIsSubmittingFriendRequest] = useState(false);
   const [isSubmittingMessage, setIsSubmittingMessage] = useState(false);
   const [updatingMessageId, setUpdatingMessageId] = useState<number | null>(null);
   const [processingFriendRequestId, setProcessingFriendRequestId] = useState<string | null>(null);
   const [removingFriendUserId, setRemovingFriendUserId] = useState<string | null>(null);
+  const [blockingUsername, setBlockingUsername] = useState<string | null>(null);
+  const [unblockingUserId, setUnblockingUserId] = useState<string | null>(null);
   const [pageErrorMessage, setPageErrorMessage] = useState<string | null>(null);
   const [pageNoticeMessage, setPageNoticeMessage] = useState<string | null>(null);
   const messageListRef = useRef<HTMLDivElement | null>(null);
@@ -283,22 +288,6 @@ export function ContactsPage() {
     }
   }
 
-  const handleOpenDirectMessage = useCallback(async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    setPageErrorMessage(null);
-    setPageNoticeMessage(null);
-    setIsSubmitting(true);
-
-    try {
-      await openDirectMessage({ username: directMessageUsername });
-      setDirectMessageUsername("");
-    } catch (error) {
-      setPageErrorMessage(getApiErrorMessage(error, "Unable to open that direct message right now."));
-    } finally {
-      setIsSubmitting(false);
-    }
-  }, [directMessageUsername, openDirectMessage]);
-
   const handleSendFriendRequest = useCallback(
     async (event: FormEvent<HTMLFormElement>) => {
       event.preventDefault();
@@ -368,6 +357,38 @@ export function ContactsPage() {
       setPageErrorMessage(getApiErrorMessage(error, "Unable to remove that friend right now."));
     } finally {
       setRemovingFriendUserId(null);
+    }
+  }
+
+  async function handleBlockUsername(username: string) {
+    setPageErrorMessage(null);
+    setPageNoticeMessage(null);
+    setBlockingUsername(username);
+
+    try {
+      const blockedUser = await blockUser({ username });
+      await refreshDirectMessages();
+      setPageNoticeMessage(`${blockedUser.blocked_username} blocked.`);
+    } catch (error) {
+      setPageErrorMessage(getApiErrorMessage(error, "Unable to block that user right now."));
+    } finally {
+      setBlockingUsername(null);
+    }
+  }
+
+  async function handleUnblockUser(blockedUser: BlockedUserSummary) {
+    setPageErrorMessage(null);
+    setPageNoticeMessage(null);
+    setUnblockingUserId(blockedUser.blocked_user_id);
+
+    try {
+      await unblockUser(blockedUser.blocked_user_id);
+      await refreshDirectMessages();
+      setPageNoticeMessage(`${blockedUser.blocked_username} unblocked.`);
+    } catch (error) {
+      setPageErrorMessage(getApiErrorMessage(error, "Unable to unblock that user right now."));
+    } finally {
+      setUnblockingUserId(null);
     }
   }
 
@@ -529,29 +550,17 @@ export function ContactsPage() {
       <>
         <h3>Direct messages</h3>
         <p>
-          One-to-one conversations live on the shared conversation model, including persisted
-          history, replies, edits, deletes, and continuity sequence numbers.
+          One-to-one conversations are available only between confirmed friends and live on the
+          shared conversation model with persisted history, replies, edits, deletes, and
+          continuity sequence numbers.
         </p>
 
         <div className="context-block">
-          <strong>Start conversation</strong>
-          <form className="auth-form" onSubmit={handleOpenDirectMessage}>
-            <label>
-              <span>Username</span>
-              <input
-                type="text"
-                placeholder="alice"
-                value={directMessageUsername}
-                onChange={(event) => setDirectMessageUsername(event.target.value)}
-                minLength={3}
-                maxLength={64}
-                required
-              />
-            </label>
-            <button className="primary-button" type="submit" disabled={isSubmitting}>
-              {isSubmitting ? "Opening..." : "Open direct message"}
-            </button>
-          </form>
+          <strong>Direct message rule</strong>
+          <p>
+            To start a direct message, first become friends with the other user. Then use{" "}
+            <strong>Open DM</strong> from the friend list.
+          </p>
         </div>
 
         <div className="context-block">
@@ -619,6 +628,16 @@ export function ContactsPage() {
                     <button
                       className="ghost-button sidebar-action-button"
                       type="button"
+                      disabled={blockingUsername === friend.username}
+                      onClick={() => {
+                        void handleBlockUsername(friend.username);
+                      }}
+                    >
+                      {blockingUsername === friend.username ? "Blocking..." : "Block"}
+                    </button>
+                    <button
+                      className="ghost-button sidebar-action-button"
+                      type="button"
                       disabled={removingFriendUserId === friend.user_id}
                       onClick={() => {
                         void handleRemoveFriend(friend);
@@ -669,6 +688,18 @@ export function ContactsPage() {
                     >
                       Reject
                     </button>
+                    <button
+                      className="ghost-button sidebar-action-button"
+                      type="button"
+                      disabled={blockingUsername === friendRequest.requester_username}
+                      onClick={() => {
+                        void handleBlockUsername(friendRequest.requester_username);
+                      }}
+                    >
+                      {blockingUsername === friendRequest.requester_username
+                        ? "Blocking..."
+                        : "Block"}
+                    </button>
                   </div>
                 </li>
               ))}
@@ -697,23 +728,52 @@ export function ContactsPage() {
             </ul>
           )}
         </div>
+
+        <div className="context-block">
+          <strong>Blocked users</strong>
+          {blockedUsers.length === 0 ? (
+            <p>No blocked users.</p>
+          ) : (
+            <ul className="contacts-stack">
+              {blockedUsers.map((blockedUser) => (
+                <li key={blockedUser.block_id} className="contacts-list-item">
+                  <div>
+                    <span>{blockedUser.blocked_username}</span>
+                    <small>
+                      {blockedUser.reason ?? "No reason"} • {formatDateTime(blockedUser.blocked_at)}
+                    </small>
+                  </div>
+                  <button
+                    className="ghost-button sidebar-action-button"
+                    type="button"
+                    disabled={unblockingUserId === blockedUser.blocked_user_id}
+                    onClick={() => {
+                      void handleUnblockUser(blockedUser);
+                    }}
+                  >
+                    {unblockingUserId === blockedUser.blocked_user_id ? "Saving..." : "Unblock"}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
       </>
     ),
     [
+      blockedUsers,
+      blockingUsername,
       friendRequestMessage,
       friendRequestUsername,
       friends,
       getPresence,
-      handleOpenDirectMessage,
       handleSendFriendRequest,
       incomingRequests,
-      isSubmitting,
       isSubmittingFriendRequest,
       outgoingRequests,
       processingFriendRequestId,
-      refreshDirectMessages,
       removingFriendUserId,
-      directMessageUsername,
+      unblockingUserId,
     ],
   );
 
@@ -755,6 +815,40 @@ export function ContactsPage() {
                   <span className="status-pill status-pill--neutral">
                     {selectedDirectMessage.status}
                   </span>
+                  {isUserBlocked(selectedDirectMessage.counterpart_user_id) ? (
+                    <button
+                      className="ghost-button"
+                      type="button"
+                      disabled={unblockingUserId === selectedDirectMessage.counterpart_user_id}
+                      onClick={() => {
+                        const blockedUser = blockedUsers.find(
+                          (currentBlockedUser) =>
+                            currentBlockedUser.blocked_user_id ===
+                            selectedDirectMessage.counterpart_user_id,
+                        );
+                        if (blockedUser) {
+                          void handleUnblockUser(blockedUser);
+                        }
+                      }}
+                    >
+                      {unblockingUserId === selectedDirectMessage.counterpart_user_id
+                        ? "Saving..."
+                        : "Unblock user"}
+                    </button>
+                  ) : (
+                    <button
+                      className="ghost-button"
+                      type="button"
+                      disabled={blockingUsername === selectedDirectMessage.counterpart_username}
+                      onClick={() => {
+                        void handleBlockUsername(selectedDirectMessage.counterpart_username);
+                      }}
+                    >
+                      {blockingUsername === selectedDirectMessage.counterpart_username
+                        ? "Blocking..."
+                        : "Block user"}
+                    </button>
+                  )}
                   <span className="status-pill status-pill--neutral">sequence {sequenceHead}</span>
                   <span
                     className={
@@ -776,89 +870,107 @@ export function ContactsPage() {
                 <p>Loading messages...</p>
               ) : messages.length === 0 ? (
                 <div className="feature-list">
+                  {!selectedDirectMessage.can_message ? (
+                    <li>This direct message is read-only right now.</li>
+                  ) : null}
                   <li>This direct message has no messages yet.</li>
-                  <li>Send the first message, reply to it, or edit and delete your own messages.</li>
+                  <li>
+                    {selectedDirectMessage.can_message
+                      ? "Send the first message, reply to it, or edit and delete your own messages."
+                      : "Messaging is disabled because the friendship is inactive or one user blocked the other."}
+                  </li>
                 </div>
               ) : (
-                <div
-                  ref={messageListRef}
-                  className="message-list message-list--scrollable"
-                  onScroll={handleMessageListScroll}
-                >
-                  {hasOlderMessages ? (
-                    <div className="message-history-banner">
-                      <button
-                        className="ghost-button"
-                        type="button"
-                        disabled={isLoadingOlderMessages}
-                        onClick={() => {
-                          void loadOlderMessages();
-                        }}
-                      >
-                        {isLoadingOlderMessages
-                          ? "Loading older messages..."
-                          : "Load older messages"}
-                      </button>
+                <>
+                  {!selectedDirectMessage.can_message ? (
+                    <div className="feature-list">
+                      <li>This direct message is read-only right now.</li>
+                      <li>
+                        Messaging is disabled because the friendship is inactive or one user blocked
+                        the other.
+                      </li>
                     </div>
                   ) : null}
-                  {messages.map((message) => (
-                    <article key={message.id} className="message-card">
-                      {message.reply_to_message ? (
-                        <div className="message-reply-reference">
-                          <strong>Replying to</strong>
-                          <p>{getReplyPreview(message)}</p>
-                        </div>
-                      ) : null}
-                      <header>
-                        <strong>{message.author_username}</strong>
-                        <div className="message-meta">
-                          <time>{formatMessageTime(message.created_at)}</time>
-                          {message.is_edited ? <span className="message-flag">edited</span> : null}
-                          <span className="message-flag">#{message.sequence_number}</span>
-                        </div>
-                      </header>
-                      <p
-                        className={
-                          message.is_deleted ? "message-body message-body--deleted" : "message-body"
-                        }
-                      >
-                        {message.is_deleted ? "Message deleted." : message.body_text}
-                      </p>
-                      {!message.is_deleted ? (
-                        <div className="message-actions">
-                          <button
-                            className="ghost-button"
-                            type="button"
-                            onClick={() => handleReply(message)}
-                          >
-                            Reply
-                          </button>
-                          {message.can_edit ? (
+                  <div
+                    ref={messageListRef}
+                    className="message-list message-list--scrollable"
+                    onScroll={handleMessageListScroll}
+                  >
+                    {hasOlderMessages ? (
+                      <div className="message-history-banner">
+                        <button
+                          className="ghost-button"
+                          type="button"
+                          disabled={isLoadingOlderMessages}
+                          onClick={() => {
+                            void loadOlderMessages();
+                          }}
+                        >
+                          {isLoadingOlderMessages
+                            ? "Loading older messages..."
+                            : "Load older messages"}
+                        </button>
+                      </div>
+                    ) : null}
+                    {messages.map((message) => (
+                      <article key={message.id} className="message-card">
+                        {message.reply_to_message ? (
+                          <div className="message-reply-reference">
+                            <strong>Replying to</strong>
+                            <p>{getReplyPreview(message)}</p>
+                          </div>
+                        ) : null}
+                        <header>
+                          <strong>{message.author_username}</strong>
+                          <div className="message-meta">
+                            <time>{formatMessageTime(message.created_at)}</time>
+                            {message.is_edited ? <span className="message-flag">edited</span> : null}
+                            <span className="message-flag">#{message.sequence_number}</span>
+                          </div>
+                        </header>
+                        <p
+                          className={
+                            message.is_deleted ? "message-body message-body--deleted" : "message-body"
+                          }
+                        >
+                          {message.is_deleted ? "Message deleted." : message.body_text}
+                        </p>
+                        {!message.is_deleted && selectedDirectMessage.can_message ? (
+                          <div className="message-actions">
                             <button
                               className="ghost-button"
                               type="button"
-                              onClick={() => handleEdit(message)}
+                              onClick={() => handleReply(message)}
                             >
-                              Edit
+                              Reply
                             </button>
-                          ) : null}
-                          {message.can_delete ? (
-                            <button
-                              className="ghost-button"
-                              type="button"
-                              disabled={updatingMessageId === message.id}
-                              onClick={() => {
-                                void handleDelete(message);
-                              }}
-                            >
-                              {updatingMessageId === message.id ? "Deleting..." : "Delete"}
-                            </button>
-                          ) : null}
-                        </div>
-                      ) : null}
-                    </article>
-                  ))}
-                </div>
+                            {message.can_edit ? (
+                              <button
+                                className="ghost-button"
+                                type="button"
+                                onClick={() => handleEdit(message)}
+                              >
+                                Edit
+                              </button>
+                            ) : null}
+                            {message.can_delete ? (
+                              <button
+                                className="ghost-button"
+                                type="button"
+                                disabled={updatingMessageId === message.id}
+                                onClick={() => {
+                                  void handleDelete(message);
+                                }}
+                              >
+                                {updatingMessageId === message.id ? "Deleting..." : "Delete"}
+                              </button>
+                            ) : null}
+                          </div>
+                        ) : null}
+                      </article>
+                    ))}
+                  </div>
+                </>
               )}
 
               <footer className="composer-shell">
@@ -899,6 +1011,7 @@ export function ContactsPage() {
                     rows={4}
                     maxLength={3072}
                     placeholder="Write a direct message"
+                    disabled={!selectedDirectMessage.can_message}
                     value={composeText}
                     onChange={(event) => setComposeText(event.target.value)}
                   />
@@ -906,7 +1019,11 @@ export function ContactsPage() {
                     <button className="ghost-button" type="button" onClick={() => resetComposerState()}>
                       Clear
                     </button>
-                    <button className="primary-button" type="submit" disabled={isSubmittingMessage}>
+                    <button
+                      className="primary-button"
+                      type="submit"
+                      disabled={isSubmittingMessage || !selectedDirectMessage.can_message}
+                    >
                       {isSubmittingMessage
                         ? editingMessageId !== null
                           ? "Saving..."
@@ -921,9 +1038,9 @@ export function ContactsPage() {
             </>
           ) : (
             <div className="feature-list">
-              <li>Open a direct message by username from the right panel.</li>
+              <li>Open a direct message from the friend list once friendship is confirmed.</li>
               <li>Existing one-to-one conversations stay listed and selectable here.</li>
-              <li>The next history and realtime tasks will build on the same conversation backbone.</li>
+              <li>Blocked or non-friend users cannot be reached through personal messaging.</li>
             </div>
           )}
         </div>
@@ -940,7 +1057,7 @@ export function ContactsPage() {
             {isLoading ? (
               <p>Loading direct messages...</p>
             ) : directMessages.length === 0 ? (
-              <p>No direct messages yet. Open your first one by username.</p>
+              <p>No direct messages yet. Open your first one from the friend list.</p>
             ) : (
               <ul className="room-people-list room-people-list--scrollable">
                 {directMessages.map((directMessage) => (

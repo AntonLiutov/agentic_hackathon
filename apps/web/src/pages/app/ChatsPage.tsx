@@ -60,7 +60,7 @@ function upsertConversationMessage(
 export function ChatsPage() {
   const { user } = useSession();
   const { getPresence, setMany } = usePresence();
-  const { getFriendshipState, sendFriendRequest } = useFriends();
+  const { blockUser, getFriendshipState, isUserBlocked, sendFriendRequest } = useFriends();
   const {
     clearUnread,
     inviteToRoom,
@@ -91,6 +91,7 @@ export function ChatsPage() {
   const [isLoadingOlderMessages, setIsLoadingOlderMessages] = useState(false);
   const [removingMemberId, setRemovingMemberId] = useState<string | null>(null);
   const [requestingFriendId, setRequestingFriendId] = useState<string | null>(null);
+  const [blockingMemberId, setBlockingMemberId] = useState<string | null>(null);
   const [updatingMessageId, setUpdatingMessageId] = useState<number | null>(null);
   const messageListRef = useRef<HTMLDivElement | null>(null);
   const shouldAutoScrollRef = useRef(false);
@@ -424,6 +425,21 @@ export function ChatsPage() {
       setPanelError(getApiErrorMessage(error, "Unable to send that friend request right now."));
     } finally {
       setRequestingFriendId(null);
+    }
+  }
+
+  async function handleBlockMember(member: RoomMember) {
+    setPanelError(null);
+    setPanelNotice(null);
+    setBlockingMemberId(member.id);
+
+    try {
+      await blockUser({ username: member.username });
+      setPanelNotice(`${member.username} blocked.`);
+    } catch (error) {
+      setPanelError(getApiErrorMessage(error, "Unable to block that user right now."));
+    } finally {
+      setBlockingMemberId(null);
     }
   }
 
@@ -920,8 +936,8 @@ export function ChatsPage() {
             ) : (
               <ul className="room-people-list room-people-list--scrollable">
                 {members.map((member) => (
-                  <li key={member.id} className="room-people-item">
-                    <div>
+                  <li key={member.id} className="room-people-item room-people-item--member">
+                    <div className="room-person-summary">
                       <strong>{member.username}</strong>
                       <small className="presence-meta">
                         <span>
@@ -968,6 +984,18 @@ export function ChatsPage() {
                           }}
                         >
                           {removingMemberId === member.id ? "Removing..." : "Remove"}
+                        </button>
+                      ) : null}
+                      {!member.is_owner && member.id !== user?.id && !isUserBlocked(member.id) ? (
+                        <button
+                          className="ghost-button sidebar-action-button"
+                          type="button"
+                          disabled={blockingMemberId === member.id}
+                          onClick={() => {
+                            void handleBlockMember(member);
+                          }}
+                        >
+                          {blockingMemberId === member.id ? "Blocking..." : "Block"}
                         </button>
                       ) : null}
                     </div>

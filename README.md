@@ -159,6 +159,11 @@ Basic checks after startup:
 38. Remove an existing friend from `/app/contacts` and confirm the friendship disappears from both accounts.
 39. Keep the recipient account open on `/app/contacts`, send a friend request from another client, and confirm the incoming request appears without refreshing the page.
 40. Confirm the `Contacts` top navigation shows a badge when there is a pending incoming friend request and no direct-message unread count is currently displayed.
+41. From `/app/contacts`, block an existing friend and confirm the friend disappears from `Friends` and appears under `Blocked users`.
+42. Open an existing DM with that blocked user and confirm the conversation becomes read-only, shows the frozen state, and disables message sending.
+43. Attempt to open a brand-new DM with a blocked user and confirm the UI shows a friendly error instead of opening the conversation.
+44. Unblock the user and confirm they disappear from `Blocked users`.
+45. Confirm unblocking does not automatically restore the friendship, and that the frozen DM stays read-only until friendship is re-established.
 
 Stop the stack:
 
@@ -186,5 +191,6 @@ This repository currently targets:
 - `SP2-07 Unread Indicators`
 - `SP2-08 Presence`
 - `SP3-01 Friendships`
+- `SP3-02 User-to-User Bans`
 
-The next implementation step is `SP3-02 User-to-User Bans`.
+The next implementation step is `SP3-03 Room Administration`.

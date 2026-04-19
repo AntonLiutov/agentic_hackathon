@@ -47,6 +47,27 @@ def _login_user(
     assert response.status_code == 200
 
 
+def _create_friendship(
+    client: TestClient,
+    *,
+    requester_email: str,
+    recipient_email: str,
+    recipient_username: str,
+) -> None:
+    _login_user(client, email=requester_email)
+    request_response = client.post(
+        "/api/friends/requests",
+        json={"username": recipient_username},
+    )
+    assert request_response.status_code == 201
+    client.post("/api/auth/logout")
+    _login_user(client, email=recipient_email)
+    accept_response = client.post(
+        f"/api/friends/requests/{request_response.json()['id']}/accept"
+    )
+    assert accept_response.status_code == 200
+
+
 @dataclass
 class _FakeClock:
     now: int
@@ -150,6 +171,15 @@ def test_presence_heartbeat_enriches_room_members_and_direct_messages(
         if member["username"] == "presence.guest"
     )
     assert guest_member["presence_status"] == "online"
+
+    _create_friendship(
+        auth_client,
+        requester_email="presence-owner@example.com",
+        recipient_email="presence-guest@example.com",
+        recipient_username="presence.guest",
+    )
+    auth_client.post("/api/auth/logout")
+    _login_user(auth_client, email="presence-owner@example.com")
 
     dm_response = auth_client.post("/api/dms", json={"username": "presence.guest"})
     assert dm_response.status_code == 201

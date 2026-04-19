@@ -35,6 +35,27 @@ def _login_user(
     assert response.status_code == 200
 
 
+def _create_friendship(
+    client: TestClient,
+    *,
+    requester_email: str,
+    recipient_email: str,
+    recipient_username: str,
+) -> None:
+    _login_user(client, email=requester_email)
+    request_response = client.post(
+        "/api/friends/requests",
+        json={"username": recipient_username},
+    )
+    assert request_response.status_code == 201
+    client.post("/api/auth/logout")
+    _login_user(client, email=recipient_email)
+    accept_response = client.post(
+        f"/api/friends/requests/{request_response.json()['id']}/accept"
+    )
+    assert accept_response.status_code == 200
+
+
 def test_room_websocket_streams_message_events(auth_client: TestClient) -> None:
     _register_user(auth_client, email="rt-room-owner@example.com", username="rt.room.owner")
     room_response = auth_client.post(
@@ -90,6 +111,13 @@ def test_dm_websocket_streams_message_creation(auth_client: TestClient) -> None:
     _register_user(auth_client, email="rt-dm-beta@example.com", username="rt.dm.beta")
     auth_client.post("/api/auth/logout")
 
+    _create_friendship(
+        auth_client,
+        requester_email="rt-dm-alpha@example.com",
+        recipient_email="rt-dm-beta@example.com",
+        recipient_username="rt.dm.beta",
+    )
+    auth_client.post("/api/auth/logout")
     _login_user(auth_client, email="rt-dm-alpha@example.com")
     dm_response = auth_client.post("/api/dms", json={"username": "rt.dm.beta"})
     assert dm_response.status_code == 201
@@ -160,6 +188,13 @@ def test_dm_realtime_message_permissions_are_projected_per_recipient(
     _register_user(auth_client, email="rt-dm-guest@example.com", username="rt.dm.guest")
     auth_client.post("/api/auth/logout")
 
+    _create_friendship(
+        auth_client,
+        requester_email="rt-dm-owner@example.com",
+        recipient_email="rt-dm-guest@example.com",
+        recipient_username="rt.dm.guest",
+    )
+    auth_client.post("/api/auth/logout")
     _login_user(auth_client, email="rt-dm-owner@example.com")
     dm_response = auth_client.post("/api/dms", json={"username": "rt.dm.guest"})
     assert dm_response.status_code == 201

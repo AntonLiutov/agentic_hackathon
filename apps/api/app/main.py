@@ -2,6 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.routes.auth import router as auth_router
+from app.api.routes.blocks import router as blocks_router
 from app.api.routes.dms import router as dms_router
 from app.api.routes.friends import router as friends_router
 from app.api.routes.health import router as health_router
@@ -38,6 +39,10 @@ openapi_tags = [
     {
         "name": "friends",
         "description": "Friendship graph and friend-request lifecycle endpoints.",
+    },
+    {
+        "name": "blocks",
+        "description": "User-to-user blocking and frozen direct-message relationship controls.",
     },
     {
         "name": "messages",
@@ -77,6 +82,7 @@ app.add_middleware(
 )
 
 app.include_router(auth_router)
+app.include_router(blocks_router)
 app.include_router(dms_router)
 app.include_router(friends_router)
 app.include_router(health_router)

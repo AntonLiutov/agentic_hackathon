@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.schemas.dms import DirectMessageSummaryResponse
 from app.auth.security import normalize_username
+from app.blocks.service import are_users_friends, has_block_between_users
 from app.db.models.conversation import Conversation, ConversationMember, DmMetadata
 from app.db.models.enums import ConversationType, DmStatus
 from app.db.models.identity import User
@@ -208,6 +209,26 @@ async def open_direct_message(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="You cannot create a direct message with yourself.",
+        )
+
+    if await has_block_between_users(
+        db,
+        left_user_id=user.id,
+        right_user_id=target_user.id,
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Direct messages are unavailable because one user blocked the other.",
+        )
+
+    if not await are_users_friends(
+        db,
+        left_user_id=user.id,
+        right_user_id=target_user.id,
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Direct messages are available only between confirmed friends.",
         )
 
     user_one_id, user_two_id = _order_user_pair(user.id, target_user.id)
