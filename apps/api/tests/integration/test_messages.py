@@ -402,6 +402,282 @@ def test_attachment_limits_are_enforced(auth_client: TestClient, tmp_path: Path)
         auth_client.app.state.settings.attachments_dir = original_attachments_dir
 
 
+def test_room_attachments_require_current_membership(
+    auth_client: TestClient,
+    tmp_path: Path,
+) -> None:
+    original_attachments_dir = auth_client.app.state.settings.attachments_dir
+    auth_client.app.state.settings.attachments_dir = str(tmp_path / "attachments")
+
+    try:
+        _register_user(
+            auth_client,
+            email="room-attachment-owner@example.com",
+            username="room.attachment.owner",
+        )
+        room_response = auth_client.post(
+            "/api/rooms",
+            json={
+                "name": "secured-attachment-room",
+                "description": "Room attachment authorization checks.",
+                "visibility": "public",
+            },
+        )
+        assert room_response.status_code == 201
+        room_id = room_response.json()["id"]
+
+        create_message_response = auth_client.post(
+            f"/api/conversations/{room_id}/messages/attachments",
+            data={"body_text": "Protected room attachment."},
+            files={
+                "files": ("secured.pdf", b"%PDF-room-attachment", "application/pdf"),
+            },
+        )
+        assert create_message_response.status_code == 201
+        attachment = create_message_response.json()["attachments"][0]
+
+        auth_client.post("/api/auth/logout")
+        _register_user(
+            auth_client,
+            email="room-attachment-outsider@example.com",
+            username="room.attachment.outsider",
+        )
+
+        download_response = auth_client.get(attachment["download_path"])
+        assert download_response.status_code == 404
+        assert download_response.json()["detail"] == "Conversation not found."
+    finally:
+        auth_client.app.state.settings.attachments_dir = original_attachments_dir
+
+
+def test_unauthenticated_attachment_download_is_rejected(
+    auth_client: TestClient,
+    tmp_path: Path,
+) -> None:
+    original_attachments_dir = auth_client.app.state.settings.attachments_dir
+    auth_client.app.state.settings.attachments_dir = str(tmp_path / "attachments")
+
+    try:
+        _register_user(
+            auth_client,
+            email="attachment-auth-owner@example.com",
+            username="attachment.auth.owner",
+        )
+        room_response = auth_client.post(
+            "/api/rooms",
+            json={
+                "name": "unauth-attachment-room",
+                "description": "Attachment auth check.",
+                "visibility": "public",
+            },
+        )
+        assert room_response.status_code == 201
+        room_id = room_response.json()["id"]
+
+        create_message_response = auth_client.post(
+            f"/api/conversations/{room_id}/messages/attachments",
+            data={"body_text": "Attachment with auth required."},
+            files={
+                "files": ("protected.txt", b"protected-room-file", "text/plain"),
+            },
+        )
+        assert create_message_response.status_code == 201
+        attachment = create_message_response.json()["attachments"][0]
+
+        auth_client.post("/api/auth/logout")
+        download_response = auth_client.get(attachment["download_path"])
+        assert download_response.status_code == 401
+    finally:
+        auth_client.app.state.settings.attachments_dir = original_attachments_dir
+
+
+def test_removed_room_member_loses_attachment_access_but_file_stays_stored(
+    auth_client: TestClient,
+    tmp_path: Path,
+) -> None:
+    original_attachments_dir = auth_client.app.state.settings.attachments_dir
+    auth_client.app.state.settings.attachments_dir = str(tmp_path / "attachments")
+
+    try:
+        _register_user(
+            auth_client,
+            email="room-file-owner@example.com",
+            username="room.file.owner",
+        )
+        room_response = auth_client.post(
+            "/api/rooms",
+            json={
+                "name": "room-file-access-loss",
+                "description": "Attachment revocation check.",
+                "visibility": "public",
+            },
+        )
+        assert room_response.status_code == 201
+        room_id = room_response.json()["id"]
+
+        auth_client.post("/api/auth/logout")
+        _register_user(
+            auth_client,
+            email="room-file-member@example.com",
+            username="room.file.member",
+        )
+        join_response = auth_client.post(f"/api/rooms/{room_id}/join")
+        assert join_response.status_code == 200
+
+        create_message_response = auth_client.post(
+            f"/api/conversations/{room_id}/messages/attachments",
+            data={"body_text": "Attachment uploaded before removal."},
+            files={
+                "files": ("handoff.txt", b"room-member-secret", "text/plain"),
+            },
+        )
+        assert create_message_response.status_code == 201
+        attachment = create_message_response.json()["attachments"][0]
+
+        stored_files = list(Path(auth_client.app.state.settings.attachments_dir).iterdir())
+        assert len(stored_files) == 1
+        assert stored_files[0].is_file()
+
+        auth_client.post("/api/auth/logout")
+        _login_user(auth_client, email="room-file-owner@example.com")
+
+        member_lookup_response = auth_client.get(f"/api/rooms/{room_id}/members")
+        assert member_lookup_response.status_code == 200
+        removable_member = next(
+            member
+            for member in member_lookup_response.json()["members"]
+            if member["username"] == "room.file.member"
+        )
+
+        remove_member_response = auth_client.delete(
+            f"/api/rooms/{room_id}/members/{removable_member['id']}"
+        )
+        assert remove_member_response.status_code == 200
+
+        assert stored_files[0].exists() is True
+
+        auth_client.post("/api/auth/logout")
+        _login_user(auth_client, email="room-file-member@example.com")
+
+        download_response = auth_client.get(attachment["download_path"])
+        assert download_response.status_code == 404
+        assert download_response.json()["detail"] == "Conversation not found."
+        assert stored_files[0].exists() is True
+    finally:
+        auth_client.app.state.settings.attachments_dir = original_attachments_dir
+
+
+def test_direct_message_attachments_require_dm_participation(
+    auth_client: TestClient,
+    tmp_path: Path,
+) -> None:
+    original_attachments_dir = auth_client.app.state.settings.attachments_dir
+    auth_client.app.state.settings.attachments_dir = str(tmp_path / "attachments")
+
+    try:
+        _register_user(auth_client, email="dm-file-alpha@example.com", username="dm.file.alpha")
+        auth_client.post("/api/auth/logout")
+        _register_user(auth_client, email="dm-file-beta@example.com", username="dm.file.beta")
+        auth_client.post("/api/auth/logout")
+        _register_user(auth_client, email="dm-file-gamma@example.com", username="dm.file.gamma")
+        auth_client.post("/api/auth/logout")
+
+        _create_friendship(
+            auth_client,
+            requester_email="dm-file-alpha@example.com",
+            recipient_email="dm-file-beta@example.com",
+            recipient_username="dm.file.beta",
+        )
+        auth_client.post("/api/auth/logout")
+        _login_user(auth_client, email="dm-file-alpha@example.com")
+
+        dm_response = auth_client.post("/api/dms", json={"username": "dm.file.beta"})
+        assert dm_response.status_code == 201
+        dm_id = dm_response.json()["id"]
+
+        create_message_response = auth_client.post(
+            f"/api/conversations/{dm_id}/messages/attachments",
+            data={"body_text": "Private attachment."},
+            files={
+                "files": ("dm-secret.pdf", b"%PDF-dm-secret", "application/pdf"),
+            },
+        )
+        assert create_message_response.status_code == 201
+        attachment = create_message_response.json()["attachments"][0]
+
+        auth_client.post("/api/auth/logout")
+        _login_user(auth_client, email="dm-file-gamma@example.com")
+
+        download_response = auth_client.get(attachment["download_path"])
+        assert download_response.status_code == 404
+        assert download_response.json()["detail"] == "Conversation not found."
+    finally:
+        auth_client.app.state.settings.attachments_dir = original_attachments_dir
+
+
+def test_frozen_direct_message_participants_keep_attachment_access(
+    auth_client: TestClient,
+    tmp_path: Path,
+) -> None:
+    original_attachments_dir = auth_client.app.state.settings.attachments_dir
+    auth_client.app.state.settings.attachments_dir = str(tmp_path / "attachments")
+
+    try:
+        _register_user(
+            auth_client,
+            email="frozen-attachment-alpha@example.com",
+            username="frozen.attachment.alpha",
+        )
+        auth_client.post("/api/auth/logout")
+        _register_user(
+            auth_client,
+            email="frozen-attachment-beta@example.com",
+            username="frozen.attachment.beta",
+        )
+        auth_client.post("/api/auth/logout")
+
+        _create_friendship(
+            auth_client,
+            requester_email="frozen-attachment-alpha@example.com",
+            recipient_email="frozen-attachment-beta@example.com",
+            recipient_username="frozen.attachment.beta",
+        )
+        auth_client.post("/api/auth/logout")
+        _login_user(auth_client, email="frozen-attachment-alpha@example.com")
+
+        dm_response = auth_client.post(
+            "/api/dms",
+            json={"username": "frozen.attachment.beta"},
+        )
+        assert dm_response.status_code == 201
+        dm_id = dm_response.json()["id"]
+
+        create_message_response = auth_client.post(
+            f"/api/conversations/{dm_id}/messages/attachments",
+            data={"body_text": "History with attachment."},
+            files={
+                "files": ("frozen-history.png", b"\x89PNG\r\nfrozen-history", "image/png"),
+            },
+        )
+        assert create_message_response.status_code == 201
+        attachment = create_message_response.json()["attachments"][0]
+
+        auth_client.post("/api/auth/logout")
+        _login_user(auth_client, email="frozen-attachment-beta@example.com")
+        block_response = auth_client.post(
+            "/api/blocks",
+            json={"username": "frozen.attachment.alpha"},
+        )
+        assert block_response.status_code == 201
+
+        download_response = auth_client.get(attachment["download_path"])
+        assert download_response.status_code == 200
+        assert download_response.headers["content-type"].startswith("image/png")
+        assert download_response.content == b"\x89PNG\r\nfrozen-history"
+    finally:
+        auth_client.app.state.settings.attachments_dir = original_attachments_dir
+
+
 def test_message_history_supports_cursor_pagination(auth_client: TestClient) -> None:
     _register_user(auth_client, email="history-owner@example.com", username="history.owner")
     room_response = auth_client.post(

@@ -42,6 +42,9 @@ Sprint 1 is complete and Sprint 2 is complete. The repository now includes:
 - presence-aware friend list entries and pending request views
 - live friendship request and removal sync across already-open clients
 - incoming friend-request badge on the `Contacts` navigation tab
+- protected attachment downloads through backend authorization checks
+- immediate room attachment access loss after room removal or ban
+- DM attachment access limited to actual DM participants
 
 ## Repository Structure
 
@@ -166,6 +169,10 @@ Basic checks after startup:
 45. Attempt to open a brand-new DM with a blocked user and confirm the UI shows a friendly error instead of opening the conversation.
 46. Unblock the user and confirm they disappear from `Blocked users`.
 47. Confirm unblocking does not automatically restore the friendship, and that the frozen DM stays read-only until friendship is re-established.
+48. In a room, upload an attachment, then open its download URL from a non-member account and confirm access is denied.
+49. Upload an attachment as a room member, remove that member from the room, and confirm the old attachment URL no longer downloads for them while the file remains stored for the room.
+50. In a DM, upload an attachment, then try the attachment URL from a third user who is not part of the DM and confirm access is denied.
+51. In a frozen DM created by a user-to-user block, confirm existing attachment history still remains downloadable for the two DM participants.
 
 Stop the stack:
 
@@ -197,5 +204,6 @@ This repository currently targets:
 - `SP3-03 Room Administration`
 - `SP3-04 Room Bans and Access Consistency`
 - `SP3-05 Attachments`
+- `SP3-06 Attachment Authorization`
 
-The next implementation step is `SP3-06 Attachment Authorization`.
+The next implementation step is `SP3-07 Account Deletion`.
