@@ -63,6 +63,33 @@ Stop the stack:
 docker compose down
 ```
 
+### Local performance probe
+
+After seeding the demo world, run the local performance probe against the running stack:
+
+```powershell
+cd apps/api
+uv run python scripts/measure_local_performance.py --concurrent-fetches 300
+```
+
+Measured local results during Sprint 4:
+
+| Probe | Result |
+|---|---|
+| Recent fetch from `demo-history-lab` at `100,000` messages | `p95 83.81ms` |
+| Older-page fetch from `demo-history-lab` at `100,000` messages | `p95 63.65ms` |
+| `300` concurrent history fetches | completed successfully in `12,424.4ms` total wall time |
+| Room message delivery latency | `p95 159.36ms` |
+| DM message delivery latency | `p95 102.3ms` |
+| Presence propagation latency | `p95 77.72ms` |
+
+These results are environment-specific, but they provide practical local evidence for:
+
+- very large history usability
+- sub-3-second local message delivery
+- sub-2-second local presence propagation
+- a moderate concurrent fetch workload completing successfully on the seeded dataset
+
 ## Critical Rule Coverage
 
 | Capability | Primary automated coverage |
@@ -87,9 +114,24 @@ Use this sequence when validating from a reviewer-style clean environment:
 
 1. Copy `.env.example` to `.env`.
 2. Run `docker compose up --build` from the repository root.
-3. Confirm the frontend, API, and Mailpit are reachable.
-4. Register a new user and confirm the first authenticated session is created.
-5. Run the manual workflow groups below.
+3. Seed the standard demo world:
+
+   ```powershell
+   cd apps/api
+   uv run python scripts/seed_demo_data.py
+   ```
+
+4. Confirm the frontend, API, and Mailpit are reachable.
+5. Sign in as one of the seeded demo users or register a new user if you want to test onboarding from scratch.
+6. Run the manual workflow groups below.
+
+For heavier history validation, optional measured seed runs during Sprint 4 were:
+
+| History messages | Chunk size | History insert time | Total seed time | Effective throughput |
+|---|---:|---:|---:|---:|
+| `250` | `100` | `0.099s` | `1.668s` | `157.63 msg/s` |
+| `20,000` | `1000` | `6.624s` | `8.129s` | `2461.97 msg/s` |
+| `100,000` | `2000` | `51.249s` | `69.286s` | `1443.47 msg/s` |
 
 ## Manual Workflow Groups
 
@@ -104,28 +146,28 @@ Use this sequence when validating from a reviewer-style clean environment:
 
 ### Rooms and moderation
 
-1. Create one public room and one private room.
-2. Join the public room from another account.
-3. Invite the other account into the private room and accept the invitation.
+1. Open `demo-general`.
+2. Sign in as another seeded account and join or interact with the public room state.
+3. Open `demo-leadership` and verify the pending invitation state.
 4. Promote and demote admins.
 5. Remove a member and confirm that removal behaves like a ban.
 6. Unban the user and confirm they can rejoin.
 
 ### Messaging and realtime
 
-1. Send, reply to, edit, and delete messages in a room.
-2. Repeat the same lifecycle in a DM.
-3. Load older messages and confirm prepend behavior.
+1. Send, reply to, edit, and delete messages in `demo-general`.
+2. Repeat the same lifecycle in a seeded DM.
+3. Open `demo-history-lab`, use `Load older messages`, and confirm prepend behavior across a long seeded history.
 4. Open the same room or DM in two clients and confirm live create/edit/delete updates.
 5. Refresh or reconnect one client and confirm the active conversation resyncs correctly.
 
 ### Social graph
 
-1. Send a friend request by username.
-2. Accept it from the recipient account.
+1. Review the seeded friends and pending request state.
+2. Accept or reject the pending request from the recipient account.
 3. Open a DM from the friend list.
-4. Block the counterpart and confirm the DM becomes frozen.
-5. Unblock and confirm messaging still depends on friendship state.
+4. Review the frozen DM with `demo.frank`.
+5. Unblock or re-friend only if you intentionally want to mutate the seeded dataset.
 
 ### Attachments and account deletion
 
