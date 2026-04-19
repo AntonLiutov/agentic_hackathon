@@ -15,6 +15,7 @@ from app.api.schemas.friends import (
     FriendSummaryResponse,
 )
 from app.auth.security import normalize_username
+from app.blocks.service import has_block_between_users, sync_direct_message_status_for_pair
 from app.db.models.enums import FriendRequestStatus
 from app.db.models.identity import User
 from app.db.models.social import FriendRequest, Friendship
@@ -199,6 +200,16 @@ async def send_friend_request(
             detail="You cannot send a friend request to yourself.",
         )
 
+    if await has_block_between_users(
+        db,
+        left_user_id=user.id,
+        right_user_id=target_user.id,
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Friend requests are unavailable because one user blocked the other.",
+        )
+
     if await _get_friendship_between(db, left_user_id=user.id, right_user_id=target_user.id):
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -303,6 +314,16 @@ async def accept_friend_request(
             detail="User not found.",
         )
 
+    if await has_block_between_users(
+        db,
+        left_user_id=user.id,
+        right_user_id=requester.id,
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Friend requests are unavailable because one user blocked the other.",
+        )
+
     existing_friendship = await _get_friendship_between(
         db,
         left_user_id=user.id,
@@ -319,6 +340,11 @@ async def accept_friend_request(
         await db.flush()
 
     friend_request.status = FriendRequestStatus.ACCEPTED
+    await sync_direct_message_status_for_pair(
+        db,
+        left_user_id=user.id,
+        right_user_id=requester.id,
+    )
     await db.commit()
     await db.refresh(existing_friendship)
 
@@ -375,6 +401,11 @@ async def remove_friend(
         )
 
     await db.execute(delete(Friendship).where(Friendship.id == friendship.id))
+    await sync_direct_message_status_for_pair(
+        db,
+        left_user_id=user.id,
+        right_user_id=friend_user_id,
+    )
     await db.commit()
 
     return ActionResponse(success=True, message="Friend removed.")

@@ -9,6 +9,11 @@ import {
 
 import { getApiErrorMessage } from "../../shared/api/client";
 import {
+  blocksApi,
+  type BlockedUserSummary,
+  type CreateUserBlockPayload,
+} from "../../shared/api/blocks";
+import {
   friendsApi,
   type CreateFriendRequestPayload,
   type FriendRequestSummary,
@@ -21,6 +26,7 @@ type FriendsContextValue = {
   friends: FriendSummary[];
   incomingRequests: FriendRequestSummary[];
   outgoingRequests: FriendRequestSummary[];
+  blockedUsers: BlockedUserSummary[];
   isLoading: boolean;
   errorMessage: string | null;
   noticeMessage: string | null;
@@ -30,8 +36,11 @@ type FriendsContextValue = {
   acceptFriendRequest: (requestId: string) => Promise<FriendSummary>;
   rejectFriendRequest: (requestId: string) => Promise<void>;
   removeFriend: (friendUserId: string) => Promise<void>;
+  blockUser: (payload: CreateUserBlockPayload) => Promise<BlockedUserSummary>;
+  unblockUser: (blockedUserId: string) => Promise<void>;
   clearMessages: () => void;
   getFriendshipState: (userId: string) => FriendshipState;
+  isUserBlocked: (userId: string) => boolean;
 };
 
 export const FriendsContext = createContext<FriendsContextValue | null>(null);
@@ -45,6 +54,7 @@ export function FriendsProvider({ children }: PropsWithChildren) {
   const [friends, setFriends] = useState<FriendSummary[]>([]);
   const [incomingRequests, setIncomingRequests] = useState<FriendRequestSummary[]>([]);
   const [outgoingRequests, setOutgoingRequests] = useState<FriendRequestSummary[]>([]);
+  const [blockedUsers, setBlockedUsers] = useState<BlockedUserSummary[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [noticeMessage, setNoticeMessage] = useState<string | null>(null);
@@ -54,6 +64,7 @@ export function FriendsProvider({ children }: PropsWithChildren) {
       setFriends([]);
       setIncomingRequests([]);
       setOutgoingRequests([]);
+      setBlockedUsers([]);
       setErrorMessage(null);
       setNoticeMessage(null);
       setIsLoading(false);
@@ -64,13 +75,15 @@ export function FriendsProvider({ children }: PropsWithChildren) {
     setErrorMessage(null);
 
     try {
-      const [friendResponse, requestResponse] = await Promise.all([
+      const [friendResponse, requestResponse, blockedResponse] = await Promise.all([
         friendsApi.listFriends(),
         friendsApi.listRequests(),
+        blocksApi.listBlocks(),
       ]);
       setFriends(sortFriends(friendResponse.friends));
       setIncomingRequests(requestResponse.incoming_requests);
       setOutgoingRequests(requestResponse.outgoing_requests);
+      setBlockedUsers(blockedResponse.blocked_users);
     } catch (error) {
       setErrorMessage(getApiErrorMessage(error, "Unable to load contacts right now."));
     } finally {
@@ -110,11 +123,17 @@ export function FriendsProvider({ children }: PropsWithChildren) {
     [friends, incomingRequests, outgoingRequests, user?.id],
   );
 
+  const isUserBlocked = useCallback(
+    (userId: string) => blockedUsers.some((blockedUser) => blockedUser.blocked_user_id === userId),
+    [blockedUsers],
+  );
+
   const value = useMemo<FriendsContextValue>(
     () => ({
       friends,
       incomingRequests,
       outgoingRequests,
+      blockedUsers,
       isLoading,
       errorMessage,
       noticeMessage,
@@ -162,15 +181,59 @@ export function FriendsProvider({ children }: PropsWithChildren) {
           setNoticeMessage(`${removedFriend.username} removed from your friends list.`);
         }
       },
+      blockUser: async (payload) => {
+        clearMessages();
+        const blockedUser = await blocksApi.blockUser(payload);
+        setBlockedUsers((currentBlockedUsers) => [
+          blockedUser,
+          ...currentBlockedUsers.filter(
+            (currentBlockedUser) =>
+              currentBlockedUser.blocked_user_id !== blockedUser.blocked_user_id,
+          ),
+        ]);
+        setFriends((currentFriends) =>
+          currentFriends.filter((friend) => friend.user_id !== blockedUser.blocked_user_id),
+        );
+        setIncomingRequests((currentRequests) =>
+          currentRequests.filter(
+            (currentRequest) => currentRequest.requester_user_id !== blockedUser.blocked_user_id,
+          ),
+        );
+        setOutgoingRequests((currentRequests) =>
+          currentRequests.filter(
+            (currentRequest) => currentRequest.recipient_user_id !== blockedUser.blocked_user_id,
+          ),
+        );
+        setNoticeMessage(`${blockedUser.blocked_username} blocked.`);
+        return blockedUser;
+      },
+      unblockUser: async (blockedUserId) => {
+        clearMessages();
+        const blockedUser = blockedUsers.find(
+          (currentBlockedUser) => currentBlockedUser.blocked_user_id === blockedUserId,
+        );
+        await blocksApi.unblockUser(blockedUserId);
+        setBlockedUsers((currentBlockedUsers) =>
+          currentBlockedUsers.filter(
+            (currentBlockedUser) => currentBlockedUser.blocked_user_id !== blockedUserId,
+          ),
+        );
+        if (blockedUser) {
+          setNoticeMessage(`${blockedUser.blocked_username} unblocked.`);
+        }
+      },
       clearMessages,
       getFriendshipState,
+      isUserBlocked,
     }),
     [
+      blockedUsers,
       clearMessages,
       errorMessage,
       friends,
       getFriendshipState,
       incomingRequests,
+      isUserBlocked,
       isLoading,
       loadFriendships,
       noticeMessage,

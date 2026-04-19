@@ -16,8 +16,8 @@ from app.api.schemas.messages import (
     EditMessageRequest,
     MessageReplyReferenceResponse,
 )
-from app.db.models.conversation import Conversation, ConversationMember
-from app.db.models.enums import ConversationType
+from app.db.models.conversation import Conversation, ConversationMember, DmMetadata
+from app.db.models.enums import ConversationType, DmStatus
 from app.db.models.identity import User
 from app.db.models.message import ConversationRead, Message
 from app.rooms.service import get_room_access_context
@@ -28,6 +28,7 @@ class ConversationAccessContext:
     conversation: Conversation
     membership: ConversationMember
     is_room_admin: bool
+    dm_status: DmStatus | None
 
 
 def _utc_now() -> datetime:
@@ -71,6 +72,7 @@ async def get_conversation_access_context(
         )
 
     is_room_admin = False
+    dm_status: DmStatus | None = None
     if conversation.type == ConversationType.ROOM:
         room_access_context = await get_room_access_context(db, room_id=conversation_id, user=user)
         if room_access_context.membership is None:
@@ -79,12 +81,27 @@ async def get_conversation_access_context(
                 detail="Conversation not found.",
             )
         is_room_admin = room_access_context.is_admin
+    else:
+        dm_metadata = await db.get(DmMetadata, conversation_id)
+        dm_status = dm_metadata.status if dm_metadata is not None else None
 
     return ConversationAccessContext(
         conversation=conversation,
         membership=membership,
         is_room_admin=is_room_admin,
+        dm_status=dm_status,
     )
+
+
+def _ensure_direct_message_is_active(access_context: ConversationAccessContext) -> None:
+    if (
+        access_context.conversation.type == ConversationType.DM
+        and access_context.dm_status == DmStatus.FROZEN
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="This direct message is read-only right now.",
+        )
 
 
 def _message_projection_query(
@@ -177,6 +194,20 @@ def _project_message(row: tuple) -> ConversationMessageResponse:
     )
 
 
+def _apply_direct_message_read_only_state(
+    message: ConversationMessageResponse,
+    *,
+    access_context: ConversationAccessContext,
+) -> ConversationMessageResponse:
+    if (
+        access_context.conversation.type == ConversationType.DM
+        and access_context.dm_status == DmStatus.FROZEN
+    ):
+        return message.model_copy(update={"can_edit": False, "can_delete": False})
+
+    return message
+
+
 async def list_recent_messages(
     db: AsyncSession,
     *,
@@ -205,7 +236,13 @@ async def list_recent_messages(
     rows = (await db.execute(query.limit(limit + 1))).all()
     has_older = len(rows) > limit
     page_rows = rows[:limit]
-    messages = [_project_message(row) for row in reversed(page_rows)]
+    messages = [
+        _apply_direct_message_read_only_state(
+            _project_message(row),
+            access_context=access_context,
+        )
+        for row in reversed(page_rows)
+    ]
     oldest_loaded_sequence = messages[0].sequence_number if messages else None
     newest_loaded_sequence = messages[-1].sequence_number if messages else None
 
@@ -367,6 +404,8 @@ async def create_message(
             reply_to_message_id=payload.reply_to_message_id,
         )
 
+    _ensure_direct_message_is_active(access_context)
+
     sequence_number = await _next_sequence_number(db, conversation_id=conversation_id)
     message = Message(
         conversation_id=conversation_id,
@@ -428,7 +467,10 @@ async def get_message(
             detail="Message not found.",
         )
 
-    return _project_message(row)
+    return _apply_direct_message_read_only_state(
+        _project_message(row),
+        access_context=access_context,
+    )
 
 
 async def edit_message(
@@ -451,6 +493,7 @@ async def edit_message(
         conversation_id=message.conversation_id,
         user=user,
     )
+    _ensure_direct_message_is_active(access_context)
 
     if message.author_user_id != user.id:
         raise HTTPException(
@@ -495,6 +538,7 @@ async def delete_message(
         conversation_id=message.conversation_id,
         user=user,
     )
+    _ensure_direct_message_is_active(access_context)
 
     can_delete = message.author_user_id == user.id or access_context.is_room_admin
     if not can_delete:

@@ -100,6 +100,7 @@ function AppFrameLayout() {
     totalUnreadCount: totalRoomUnreadCount,
   } = useRooms();
   const {
+    directMessages,
     incrementUnread: incrementDirectMessageUnread,
     refreshDirectMessages,
     selectedDirectMessageId,
@@ -122,6 +123,9 @@ function AppFrameLayout() {
       const isActiveDirectMessage =
         location.pathname.startsWith("/app/contacts") &&
         selectedDirectMessageId === conversationId;
+      const hasDirectMessage = directMessages.some(
+        (directMessage) => directMessage.id === conversationId,
+      );
 
       if (!isActiveRoom) {
         incrementRoomUnread(conversationId);
@@ -130,11 +134,17 @@ function AppFrameLayout() {
       if (!isActiveDirectMessage) {
         incrementDirectMessageUnread(conversationId);
       }
+
+      if (!isActiveDirectMessage && !hasDirectMessage) {
+        void refreshDirectMessages();
+      }
     },
     [
+      directMessages,
       incrementDirectMessageUnread,
       incrementRoomUnread,
       location.pathname,
+      refreshDirectMessages,
       selectedDirectMessageId,
       selectedRoomId,
     ],

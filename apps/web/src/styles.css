@@ -599,6 +599,15 @@ h2 {
   background: rgba(255, 255, 255, 0.04);
 }
 
+.room-people-item--member {
+  grid-template-columns: minmax(0, 1fr);
+  align-items: start;
+}
+
+.room-person-summary {
+  min-width: 0;
+}
+
 .room-member-actions,
 .contacts-inline-actions {
   display: flex;
@@ -606,6 +615,20 @@ h2 {
   gap: 0.5rem;
   flex-wrap: wrap;
   justify-content: flex-end;
+}
+
+.room-member-actions {
+  justify-content: flex-start;
+}
+
+.room-member-actions .sidebar-muted {
+  display: inline-flex;
+  align-items: center;
+  min-height: 2.2rem;
+}
+
+.room-member-actions .sidebar-action-button {
+  max-width: 100%;
 }
 
 .contacts-stack {
@@ -655,6 +678,10 @@ h2 {
   align-items: center;
   gap: 0.45rem;
   flex-wrap: wrap;
+}
+
+.room-person-summary strong {
+  overflow-wrap: anywhere;
 }
 
 .presence-dot {

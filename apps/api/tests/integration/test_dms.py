@@ -35,6 +35,27 @@ def _login_user(
     assert response.status_code == 200
 
 
+def _create_friendship(
+    client: TestClient,
+    *,
+    requester_email: str,
+    recipient_email: str,
+    recipient_username: str,
+) -> None:
+    _login_user(client, email=requester_email)
+    request_response = client.post(
+        "/api/friends/requests",
+        json={"username": recipient_username},
+    )
+    assert request_response.status_code == 201
+    client.post("/api/auth/logout")
+    _login_user(client, email=recipient_email)
+    accept_response = client.post(
+        f"/api/friends/requests/{request_response.json()['id']}/accept"
+    )
+    assert accept_response.status_code == 200
+
+
 def test_direct_message_creation_listing_and_access_rules(auth_client: TestClient) -> None:
     _register_user(
         auth_client,
@@ -57,6 +78,13 @@ def test_direct_message_creation_listing_and_access_rules(auth_client: TestClien
     )
     auth_client.post("/api/auth/logout")
 
+    _create_friendship(
+        auth_client,
+        requester_email="dm-owner@example.com",
+        recipient_email="dm-target@example.com",
+        recipient_username="dm.target",
+    )
+    auth_client.post("/api/auth/logout")
     _login_user(auth_client, email="dm-owner@example.com")
 
     create_response = auth_client.post(

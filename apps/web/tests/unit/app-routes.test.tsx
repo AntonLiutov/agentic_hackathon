@@ -185,6 +185,13 @@ beforeEach(() => {
       );
     }
 
+    if (url.endsWith("/api/blocks")) {
+      return new Response(JSON.stringify({ blocked_users: [] }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
     if (url.endsWith("/api/rooms/room-engineering/members")) {
       return new Response(
         JSON.stringify({
@@ -1149,6 +1156,13 @@ describe("App routes", () => {
         );
       }
 
+      if (url.endsWith("/api/blocks") && (!init?.method || init.method === "GET")) {
+        return new Response(JSON.stringify({ blocked_users: [] }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
       if (url.endsWith("/api/friends/requests") && init?.method === "POST") {
         outgoingRequests = [
           {
@@ -1350,6 +1364,13 @@ describe("App routes", () => {
         );
       }
 
+      if (url.endsWith("/api/blocks") && (!init?.method || init.method === "GET")) {
+        return new Response(JSON.stringify({ blocked_users: [] }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
       return new Response(JSON.stringify({ detail: "Unhandled request in test." }), {
         status: 500,
         headers: { "Content-Type": "application/json" },
@@ -1507,6 +1528,13 @@ describe("App routes", () => {
         );
       }
 
+      if (url.endsWith("/api/blocks") && (!init?.method || init.method === "GET")) {
+        return new Response(JSON.stringify({ blocked_users: [] }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
       if (
         url.endsWith("/api/friends/requests/request-accept-1/accept") &&
         init?.method === "POST"
@@ -1577,6 +1605,555 @@ describe("App routes", () => {
     await waitFor(() => {
       expect(screen.getByRole("button", { name: "live.friend online" })).toBeInTheDocument();
       expect(screen.getByText("You are now friends with live.friend.")).toBeInTheDocument();
+    });
+  });
+
+  it("refreshes the direct-message list when the first unread event arrives for an unknown dm", async () => {
+    let directMessages: Array<{
+      id: string;
+      counterpart_user_id: string;
+      counterpart_username: string;
+      counterpart_presence_status: "online" | "afk" | "offline";
+      status: "active" | "frozen";
+      created_at: string;
+      is_initiator: boolean;
+      can_message: boolean;
+      unread_count: number;
+    }> = [];
+
+    fetchMock.mockImplementation(async (input, init) => {
+      const url = typeof input === "string" ? input : input.toString();
+
+      if (url.endsWith("/api/auth/me")) {
+        return new Response(
+          JSON.stringify({
+            user: {
+              id: "user-1",
+              username: "Preview User",
+              email: "preview@agentic.chat",
+            },
+          }),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          },
+        );
+      }
+
+      if (url.includes("/api/rooms/mine") || url.includes("/api/rooms/public")) {
+        return new Response(JSON.stringify({ rooms: [] }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      if (url.endsWith("/api/rooms/invitations/mine")) {
+        return new Response(JSON.stringify({ invitations: [] }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      if (url.endsWith("/api/dms/mine")) {
+        return new Response(JSON.stringify({ direct_messages: directMessages }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      if (url.endsWith("/api/dms/dm-first-live-1")) {
+        return new Response(JSON.stringify(directMessages[0] ?? null), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      if (url.includes("/api/conversations/dm-first-live-1/messages")) {
+        return new Response(
+          JSON.stringify({
+            conversation_id: "dm-first-live-1",
+            sequence_head: 1,
+            oldest_loaded_sequence: 1,
+            newest_loaded_sequence: 1,
+            next_before_sequence: null,
+            has_older: false,
+            messages: [
+              {
+                id: 101,
+                conversation_id: "dm-first-live-1",
+                author_user_id: "user-12",
+                author_username: "first.live",
+                sequence_number: 1,
+                body_text: "Hello from the very first live DM.",
+                reply_to_message_id: null,
+                reply_to_message: null,
+                created_at: "2026-04-19T19:10:00Z",
+                edited_at: null,
+                deleted_at: null,
+                is_edited: false,
+                is_deleted: false,
+                can_edit: false,
+                can_delete: false,
+              },
+            ],
+          }),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          },
+        );
+      }
+
+      if (
+        url.endsWith("/api/conversations/dm-first-live-1/read") &&
+        init?.method === "POST"
+      ) {
+        return new Response(
+          JSON.stringify({
+            conversation_id: "dm-first-live-1",
+            last_read_sequence_number: 1,
+            unread_count: 0,
+          }),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          },
+        );
+      }
+
+      if (url.endsWith("/api/friends") && (!init?.method || init.method === "GET")) {
+        return new Response(JSON.stringify({ friends: [] }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      if (url.endsWith("/api/friends/requests") && (!init?.method || init.method === "GET")) {
+        return new Response(
+          JSON.stringify({
+            incoming_requests: [],
+            outgoing_requests: [],
+          }),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          },
+        );
+      }
+
+      if (url.endsWith("/api/blocks") && (!init?.method || init.method === "GET")) {
+        return new Response(JSON.stringify({ blocked_users: [] }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      return new Response(JSON.stringify({ detail: "Unhandled request in test." }), {
+        status: 500,
+        headers: { "Content-Type": "application/json" },
+      });
+    });
+
+    renderRoutes(["/app/contacts"]);
+
+    await waitFor(() => {
+      expect(
+        screen.getByText("No direct messages yet. Open your first one by username."),
+      ).toBeInTheDocument();
+    });
+
+    directMessages = [
+      {
+        id: "dm-first-live-1",
+        counterpart_user_id: "user-12",
+        counterpart_username: "first.live",
+        counterpart_presence_status: "online",
+        status: "active",
+        created_at: "2026-04-19T19:10:00Z",
+        is_initiator: false,
+        can_message: true,
+        unread_count: 1,
+      },
+    ];
+
+    await act(async () => {
+      MockWebSocket.instances[0]?.emit({
+        type: "conversation.unread",
+        conversation_id: "dm-first-live-1",
+        sequence_head: 1,
+      });
+    });
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "first.live online" })).toBeInTheDocument();
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText("Hello from the very first live DM.")).toBeInTheDocument();
+    });
+  });
+
+  it("shows a frozen direct message as read-only after a block", async () => {
+    const directMessages = [
+      {
+        id: "dm-frozen-1",
+        counterpart_user_id: "user-8",
+        counterpart_username: "blocked.friend",
+        counterpart_presence_status: "offline",
+        status: "frozen",
+        created_at: "2026-04-19T19:00:00Z",
+        is_initiator: true,
+        can_message: false,
+        unread_count: 0,
+      },
+    ];
+    const blockedUsers = [
+      {
+        block_id: "block-1",
+        blocked_user_id: "user-8",
+        blocked_username: "blocked.friend",
+        reason: "Not a fit",
+        blocked_at: "2026-04-19T19:05:00Z",
+      },
+    ];
+
+    fetchMock.mockImplementation(async (input, init) => {
+      const url = typeof input === "string" ? input : input.toString();
+
+      if (url.endsWith("/api/auth/me")) {
+        return new Response(
+          JSON.stringify({
+            user: {
+              id: "user-1",
+              username: "Preview User",
+              email: "preview@agentic.chat",
+            },
+          }),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          },
+        );
+      }
+
+      if (url.includes("/api/rooms/mine") || url.includes("/api/rooms/public")) {
+        return new Response(JSON.stringify({ rooms: [] }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      if (url.endsWith("/api/rooms/invitations/mine")) {
+        return new Response(JSON.stringify({ invitations: [] }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      if (url.endsWith("/api/dms/mine")) {
+        return new Response(JSON.stringify({ direct_messages: directMessages }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      if (url.endsWith("/api/dms/dm-frozen-1")) {
+        return new Response(JSON.stringify(directMessages[0]), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      if (url.endsWith("/api/friends") && (!init?.method || init.method === "GET")) {
+        return new Response(JSON.stringify({ friends: [] }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      if (url.endsWith("/api/friends/requests") && (!init?.method || init.method === "GET")) {
+        return new Response(
+          JSON.stringify({
+            incoming_requests: [],
+            outgoing_requests: [],
+          }),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          },
+        );
+      }
+
+      if (url.endsWith("/api/blocks") && (!init?.method || init.method === "GET")) {
+        return new Response(JSON.stringify({ blocked_users: blockedUsers }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      if (url.includes("/api/conversations/dm-frozen-1/messages")) {
+        return new Response(
+          JSON.stringify({
+            messages: [
+              {
+                id: 101,
+                conversation_id: "dm-frozen-1",
+                author_user_id: "user-8",
+                author_username: "blocked.friend",
+                body_text: "Last message before block.",
+                sequence_number: 3,
+                created_at: "2026-04-19T19:01:00Z",
+                updated_at: null,
+                deleted_at: null,
+                is_deleted: false,
+                can_edit: false,
+                can_delete: false,
+                reply_to_message_id: null,
+                reply_preview: null,
+              },
+            ],
+            sequence_head: 3,
+            oldest_loaded_sequence: 3,
+            newest_loaded_sequence: 3,
+            next_before_sequence: null,
+            has_older: false,
+          }),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          },
+        );
+      }
+
+      return new Response(JSON.stringify({ detail: "Unhandled request in test." }), {
+        status: 500,
+        headers: { "Content-Type": "application/json" },
+      });
+    });
+
+    renderRoutes(["/app/contacts"]);
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "blocked.friend offline" })).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "blocked.friend offline" }));
+
+    await waitFor(() => {
+      expect(screen.getByText("This direct message is read-only right now.")).toBeInTheDocument();
+      expect(
+        screen.getByText(
+          "Messaging is disabled because the friendship is inactive or one user blocked the other.",
+        ),
+      ).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Unblock user" })).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Send" })).toBeDisabled();
+      expect(screen.getByPlaceholderText("Write a direct message")).toBeDisabled();
+    });
+  });
+
+  it("keeps an existing direct message visible after blocking the counterpart", async () => {
+    let directMessages = [
+      {
+        id: "dm-block-1",
+        counterpart_user_id: "user-9",
+        counterpart_username: "block.target",
+        counterpart_presence_status: "online",
+        status: "active",
+        created_at: "2026-04-19T19:00:00Z",
+        is_initiator: true,
+        can_message: true,
+        unread_count: 0,
+      },
+    ];
+    let friends = [
+      {
+        friendship_id: "friendship-block-1",
+        user_id: "user-9",
+        username: "block.target",
+        friends_since: "2026-04-19T18:00:00Z",
+        presence_status: "online",
+      },
+    ];
+    let blockedUsers: Array<{
+      block_id: string;
+      blocked_user_id: string;
+      blocked_username: string;
+      reason: string | null;
+      blocked_at: string;
+    }> = [];
+
+    fetchMock.mockImplementation(async (input, init) => {
+      const url = typeof input === "string" ? input : input.toString();
+
+      if (url.endsWith("/api/auth/me")) {
+        return new Response(
+          JSON.stringify({
+            user: {
+              id: "user-1",
+              username: "Preview User",
+              email: "preview@agentic.chat",
+            },
+          }),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          },
+        );
+      }
+
+      if (url.includes("/api/rooms/mine") || url.includes("/api/rooms/public")) {
+        return new Response(JSON.stringify({ rooms: [] }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      if (url.endsWith("/api/rooms/invitations/mine")) {
+        return new Response(JSON.stringify({ invitations: [] }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      if (url.endsWith("/api/dms/mine")) {
+        return new Response(JSON.stringify({ direct_messages: directMessages }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      if (url.endsWith("/api/dms/dm-block-1")) {
+        return new Response(JSON.stringify(directMessages[0]), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      if (url.includes("/api/conversations/dm-block-1/messages")) {
+        return new Response(
+          JSON.stringify({
+            messages: [
+              {
+                id: 201,
+                conversation_id: "dm-block-1",
+                author_user_id: "user-9",
+                author_username: "block.target",
+                body_text: "Existing history stays.",
+                sequence_number: 4,
+                created_at: "2026-04-19T19:02:00Z",
+                updated_at: null,
+                deleted_at: null,
+                is_deleted: false,
+                can_edit: false,
+                can_delete: false,
+                reply_to_message_id: null,
+                reply_preview: null,
+              },
+            ],
+            sequence_head: 4,
+            oldest_loaded_sequence: 4,
+            newest_loaded_sequence: 4,
+            next_before_sequence: null,
+            has_older: false,
+          }),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          },
+        );
+      }
+
+      if (url.endsWith("/api/conversations/dm-block-1/read") && init?.method === "POST") {
+        return new Response(
+          JSON.stringify({
+            success: true,
+            message: "Conversation marked as read.",
+          }),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          },
+        );
+      }
+
+      if (url.endsWith("/api/friends") && (!init?.method || init.method === "GET")) {
+        return new Response(JSON.stringify({ friends }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      if (url.endsWith("/api/friends/requests") && (!init?.method || init.method === "GET")) {
+        return new Response(
+          JSON.stringify({
+            incoming_requests: [],
+            outgoing_requests: [],
+          }),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          },
+        );
+      }
+
+      if (url.endsWith("/api/blocks") && (!init?.method || init.method === "GET")) {
+        return new Response(JSON.stringify({ blocked_users: blockedUsers }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      if (url.endsWith("/api/blocks") && init?.method === "POST") {
+        blockedUsers = [
+          {
+            block_id: "block-keep-1",
+            blocked_user_id: "user-9",
+            blocked_username: "block.target",
+            reason: null,
+            blocked_at: "2026-04-19T19:05:00Z",
+          },
+        ];
+        friends = [];
+        directMessages = [
+          {
+            ...directMessages[0],
+            status: "frozen",
+            can_message: false,
+            counterpart_presence_status: "offline",
+          },
+        ];
+
+        return new Response(JSON.stringify(blockedUsers[0]), {
+          status: 201,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      return new Response(JSON.stringify({ detail: "Unhandled request in test." }), {
+        status: 500,
+        headers: { "Content-Type": "application/json" },
+      });
+    });
+
+    renderRoutes(["/app/contacts"]);
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "block.target online" })).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Block user" }));
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "block.target offline" })).toBeInTheDocument();
+      expect(screen.getByText("block.target blocked.")).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "block.target offline" }));
+
+    await waitFor(() => {
+      expect(screen.getByText("This direct message is read-only right now.")).toBeInTheDocument();
+      expect(screen.getByText("Existing history stays.")).toBeInTheDocument();
     });
   });
 
