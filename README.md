@@ -37,6 +37,11 @@ Sprint 1 is complete and Sprint 2 is complete. The repository now includes:
 - presence shown in room member lists and direct-message surfaces
 - sidebar navigation from non-chat routes into the correct chat workspace
 - privacy-safe conversation lists that no longer expose other users' email addresses
+- friendship requests with accept, reject, and remove flows
+- friendship actions from the contacts view and room member list
+- presence-aware friend list entries and pending request views
+- live friendship request and removal sync across already-open clients
+- incoming friend-request badge on the `Contacts` navigation tab
 
 ## Repository Structure
 
@@ -147,6 +152,13 @@ Basic checks after startup:
 31. Use the workspace sign-out action and confirm protected routes redirect back to `/signin`.
 32. Open `http://localhost:8000/healthz` and confirm the API returns `status: ok`.
 33. Open `http://localhost:3000/` and confirm the frontend responds.
+34. Open `/app/contacts`, send a friend request by username, and confirm it appears in `Outgoing requests`.
+35. Sign in as the recipient, open `/app/contacts`, and confirm the request appears in `Incoming requests`.
+36. Accept the request and confirm both accounts now see each other in the `Friends` list with presence.
+37. Open a shared room containing a non-friend member, click `Add friend` from the member list, and confirm the request state changes to `Request sent`.
+38. Remove an existing friend from `/app/contacts` and confirm the friendship disappears from both accounts.
+39. Keep the recipient account open on `/app/contacts`, send a friend request from another client, and confirm the incoming request appears without refreshing the page.
+40. Confirm the `Contacts` top navigation shows a badge when there is a pending incoming friend request and no direct-message unread count is currently displayed.
 
 Stop the stack:
 
@@ -173,5 +185,6 @@ This repository currently targets:
 - `SP2-06 Realtime Delivery`
 - `SP2-07 Unread Indicators`
 - `SP2-08 Presence`
+- `SP3-01 Friendships`
 
-The next implementation step is Sprint 3: friendships, moderation surface expansion, attachments, and broader hardening.
+The next implementation step is `SP3-02 User-to-User Bans`.

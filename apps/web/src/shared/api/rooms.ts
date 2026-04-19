@@ -1,3 +1,4 @@
+import type { FriendshipState } from "./friends";
 import type { PresenceStatus } from "./presence";
 import { apiRequest } from "./client";
 
@@ -29,6 +30,7 @@ export type RoomMember = {
   is_admin: boolean;
   can_remove: boolean;
   presence_status: PresenceStatus;
+  friendship_state: FriendshipState;
 };
 
 export type RoomBan = {

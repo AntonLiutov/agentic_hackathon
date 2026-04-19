@@ -599,6 +599,46 @@ h2 {
   background: rgba(255, 255, 255, 0.04);
 }
 
+.room-member-actions,
+.contacts-inline-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.contacts-stack {
+  list-style: none;
+  padding-left: 0;
+  margin: 0;
+  display: grid;
+  gap: 0.75rem;
+}
+
+.contacts-list-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.75rem;
+  align-items: center;
+  padding: 0.85rem 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.contacts-list-item:first-child {
+  border-top: none;
+  padding-top: 0;
+}
+
+.contacts-list-item:last-child {
+  padding-bottom: 0;
+}
+
+.contacts-list-item span,
+.contacts-list-item small {
+  display: block;
+}
+
 .room-people-item .sidebar-room-button {
   min-width: 0;
 }
@@ -910,5 +950,14 @@ h2 {
 
   .room-people-item {
     grid-template-columns: 1fr;
+  }
+
+  .contacts-list-item {
+    grid-template-columns: 1fr;
+  }
+
+  .room-member-actions,
+  .contacts-inline-actions {
+    justify-content: flex-start;
   }
 }

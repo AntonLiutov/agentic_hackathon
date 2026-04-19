@@ -2,6 +2,7 @@ import { type FormEvent, useCallback, useState } from "react";
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 
 import { useDirectMessages } from "../direct-messages/use-direct-messages";
+import { useFriends } from "../friends/use-friends";
 import { usePresence } from "../presence/use-presence";
 import { useRooms } from "../rooms/use-rooms";
 import { useSession } from "../session/use-session";
@@ -78,6 +79,7 @@ function AppFrameLayout() {
   const location = useLocation();
   const { user, signOut } = useSession();
   const { setPresence } = usePresence();
+  const { pendingIncomingCount, refreshFriendships } = useFriends();
   const {
     acceptInvitation,
     clearMessages,
@@ -141,7 +143,8 @@ function AppFrameLayout() {
   const handleInboxConnected = useCallback(() => {
     void refreshRooms();
     void refreshDirectMessages();
-  }, [refreshDirectMessages, refreshRooms]);
+    void refreshFriendships();
+  }, [refreshDirectMessages, refreshFriendships, refreshRooms]);
 
   const handlePresenceEvent = useCallback(
     (userId: string, presenceStatus: PresenceStatus) => {
@@ -150,10 +153,16 @@ function AppFrameLayout() {
     [setPresence],
   );
 
+  const handleFriendshipsChanged = useCallback(() => {
+    void refreshDirectMessages();
+    void refreshFriendships();
+  }, [refreshDirectMessages, refreshFriendships]);
+
   useInboxRealtime({
     enabled: Boolean(user),
     onUnread: handleUnreadEvent,
     onPresence: handlePresenceEvent,
+    onFriendshipsChanged: handleFriendshipsChanged,
     onConnected: handleInboxConnected,
   });
 
@@ -248,6 +257,11 @@ function AppFrameLayout() {
               ) : null}
               {item.to === "/app/contacts" && totalDirectMessageUnreadCount > 0 ? (
                 <span className="sidebar-badge">{totalDirectMessageUnreadCount}</span>
+              ) : null}
+              {item.to === "/app/contacts" &&
+              totalDirectMessageUnreadCount === 0 &&
+              pendingIncomingCount > 0 ? (
+                <span className="sidebar-badge">{pendingIncomingCount}</span>
               ) : null}
             </NavLink>
           ))}

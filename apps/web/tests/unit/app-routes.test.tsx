@@ -1,4 +1,12 @@
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -157,6 +165,26 @@ beforeEach(() => {
       });
     }
 
+    if (url.endsWith("/api/friends")) {
+      return new Response(JSON.stringify({ friends: [] }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    if (url.endsWith("/api/friends/requests")) {
+      return new Response(
+        JSON.stringify({
+          incoming_requests: [],
+          outgoing_requests: [],
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        },
+      );
+    }
+
     if (url.endsWith("/api/rooms/room-engineering/members")) {
       return new Response(
         JSON.stringify({
@@ -169,6 +197,7 @@ beforeEach(() => {
               is_owner: true,
               is_admin: true,
               can_remove: false,
+              friendship_state: "self",
             },
           ],
         }),
@@ -972,6 +1001,26 @@ describe("App routes", () => {
         });
       }
 
+      if (url.endsWith("/api/friends") && (!init?.method || init.method === "GET")) {
+        return new Response(JSON.stringify({ friends: [] }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      if (url.endsWith("/api/friends/requests") && (!init?.method || init.method === "GET")) {
+        return new Response(
+          JSON.stringify({
+            incoming_requests: [],
+            outgoing_requests: [],
+          }),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          },
+        );
+      }
+
       if (url.endsWith("/api/dms") && init?.method === "POST") {
         const openedDirectMessage = {
           id: "dm-new",
@@ -1004,7 +1053,7 @@ describe("App routes", () => {
       expect(screen.getByRole("button", { name: /existing\.friend/i })).toBeInTheDocument();
     });
 
-    fireEvent.change(screen.getByLabelText("Username"), {
+    fireEvent.change(screen.getAllByLabelText("Username")[0], {
       target: { value: "new.friend" },
     });
     fireEvent.click(screen.getByRole("button", { name: "Open direct message" }));
@@ -1013,6 +1062,521 @@ describe("App routes", () => {
       expect(screen.getByText("Direct message ready with new.friend.")).toBeInTheDocument();
       expect(screen.getByRole("heading", { name: "new.friend" })).toBeInTheDocument();
       expect(screen.getByText("Direct conversation on the shared chat model.")).toBeInTheDocument();
+    });
+  });
+
+  it("sends, accepts, and removes friendships from the contacts flow", async () => {
+    let friends = [
+      {
+        friendship_id: "friendship-1",
+        user_id: "user-2",
+        username: "existing.friend",
+        friends_since: "2026-04-18T08:00:00Z",
+        presence_status: "online",
+      },
+    ];
+    let incomingRequests = [
+      {
+        id: "request-1",
+        requester_user_id: "user-3",
+        requester_username: "pending.friend",
+        recipient_user_id: "user-1",
+        recipient_username: "Preview User",
+        request_text: "Want to collaborate?",
+        status: "pending",
+        created_at: "2026-04-18T09:00:00Z",
+      },
+    ];
+    let outgoingRequests = [];
+
+    fetchMock.mockImplementation(async (input, init) => {
+      const url = typeof input === "string" ? input : input.toString();
+
+      if (url.endsWith("/api/auth/me")) {
+        return new Response(
+          JSON.stringify({
+            user: {
+              id: "user-1",
+              username: "Preview User",
+              email: "preview@agentic.chat",
+            },
+          }),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          },
+        );
+      }
+
+      if (url.includes("/api/rooms/mine") || url.includes("/api/rooms/public")) {
+        return new Response(JSON.stringify({ rooms: [] }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      if (url.endsWith("/api/rooms/invitations/mine")) {
+        return new Response(JSON.stringify({ invitations: [] }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      if (url.endsWith("/api/dms/mine")) {
+        return new Response(JSON.stringify({ direct_messages: [] }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      if (url.endsWith("/api/friends") && (!init?.method || init.method === "GET")) {
+        return new Response(JSON.stringify({ friends }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      if (url.endsWith("/api/friends/requests") && (!init?.method || init.method === "GET")) {
+        return new Response(
+          JSON.stringify({
+            incoming_requests: incomingRequests,
+            outgoing_requests: outgoingRequests,
+          }),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          },
+        );
+      }
+
+      if (url.endsWith("/api/friends/requests") && init?.method === "POST") {
+        outgoingRequests = [
+          {
+            id: "request-2",
+            requester_user_id: "user-1",
+            requester_username: "Preview User",
+            recipient_user_id: "user-4",
+            recipient_username: "new.friend",
+            request_text: "Let's connect!",
+            status: "pending",
+            created_at: "2026-04-18T09:10:00Z",
+          },
+          ...outgoingRequests,
+        ];
+
+        return new Response(JSON.stringify(outgoingRequests[0]), {
+          status: 201,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      if (url.endsWith("/api/friends/requests/request-1/accept") && init?.method === "POST") {
+        incomingRequests = [];
+        friends = [
+          {
+            friendship_id: "friendship-2",
+            user_id: "user-3",
+            username: "pending.friend",
+            friends_since: "2026-04-18T09:15:00Z",
+            presence_status: "offline",
+          },
+          ...friends,
+        ];
+
+        return new Response(JSON.stringify(friends[0]), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      if (url.endsWith("/api/friends/user-2") && init?.method === "DELETE") {
+        friends = friends.filter((friend) => friend.user_id !== "user-2");
+
+        return new Response(
+          JSON.stringify({
+            success: true,
+            message: "Friend removed.",
+          }),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          },
+        );
+      }
+
+      return new Response(JSON.stringify({ detail: "Unhandled request in test." }), {
+        status: 500,
+        headers: { "Content-Type": "application/json" },
+      });
+    });
+
+    renderRoutes(["/app/contacts"]);
+
+    await waitFor(() => {
+      expect(screen.getByText("existing.friend")).toBeInTheDocument();
+      expect(screen.getByText("pending.friend")).toBeInTheDocument();
+    });
+
+    const usernameInputs = screen.getAllByLabelText("Username");
+    fireEvent.change(usernameInputs[1], {
+      target: { value: "new.friend" },
+    });
+    fireEvent.change(screen.getByLabelText("Message"), {
+      target: { value: "Let's connect!" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Send friend request" }));
+
+    await waitFor(() => {
+      expect(screen.getByText("Friend request sent to new.friend.")).toBeInTheDocument();
+      expect(screen.getByText("new.friend")).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Accept" }));
+
+    await waitFor(() => {
+      expect(screen.getByText("You are now friends with pending.friend.")).toBeInTheDocument();
+      expect(screen.queryByText("Want to collaborate?")).not.toBeInTheDocument();
+    });
+
+    const existingFriendListItem = screen
+      .getByText("existing.friend")
+      .closest(".contacts-list-item");
+    expect(existingFriendListItem).not.toBeNull();
+
+    if (existingFriendListItem) {
+      fireEvent.click(within(existingFriendListItem).getByRole("button", { name: "Remove" }));
+    }
+
+    await waitFor(() => {
+      expect(screen.getByText("existing.friend removed from your friends list.")).toBeInTheDocument();
+      expect(screen.queryAllByText("existing.friend")).toHaveLength(0);
+    });
+  });
+
+  it("refreshes friendship state live after an inbox friendship event", async () => {
+    let friends = [] as Array<{
+      friendship_id: string;
+      user_id: string;
+      username: string;
+      friends_since: string;
+      presence_status: "online" | "afk" | "offline";
+    }>;
+    let incomingRequests = [] as Array<{
+      id: string;
+      requester_user_id: string;
+      requester_username: string;
+      recipient_user_id: string;
+      recipient_username: string;
+      request_text: string | null;
+      status: "pending";
+      created_at: string;
+    }>;
+    let outgoingRequests = [] as Array<{
+      id: string;
+      requester_user_id: string;
+      requester_username: string;
+      recipient_user_id: string;
+      recipient_username: string;
+      request_text: string | null;
+      status: "pending";
+      created_at: string;
+    }>;
+
+    fetchMock.mockImplementation(async (input, init) => {
+      const url = typeof input === "string" ? input : input.toString();
+
+      if (url.endsWith("/api/auth/me")) {
+        return new Response(JSON.stringify({ detail: "Authentication required." }), {
+          status: 401,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      if (url.endsWith("/api/auth/login") && init?.method === "POST") {
+        return new Response(
+          JSON.stringify({
+            user: {
+              id: "user-1",
+              email: "preview@agentic.chat",
+              username: "Preview User",
+              name: "Preview User",
+            },
+          }),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          },
+        );
+      }
+
+      if (url.endsWith("/api/rooms/mine") || url.endsWith("/api/rooms/public")) {
+        return new Response(JSON.stringify({ rooms: [] }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      if (url.endsWith("/api/rooms/invitations/mine")) {
+        return new Response(JSON.stringify({ invitations: [] }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      if (url.endsWith("/api/dms/mine")) {
+        return new Response(JSON.stringify({ direct_messages: [] }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      if (url.endsWith("/api/friends") && (!init?.method || init.method === "GET")) {
+        return new Response(JSON.stringify({ friends }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      if (url.endsWith("/api/friends/requests") && (!init?.method || init.method === "GET")) {
+        return new Response(
+          JSON.stringify({
+            incoming_requests: incomingRequests,
+            outgoing_requests: outgoingRequests,
+          }),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          },
+        );
+      }
+
+      return new Response(JSON.stringify({ detail: "Unhandled request in test." }), {
+        status: 500,
+        headers: { "Content-Type": "application/json" },
+      });
+    });
+
+    renderRoutes(["/signin"]);
+
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { name: "Sign in" })).toBeInTheDocument();
+    });
+
+    fireEvent.change(screen.getByLabelText("Email"), {
+      target: { value: "preview@agentic.chat" },
+    });
+    fireEvent.change(screen.getByLabelText("Password"), {
+      target: { value: "correct-horse-battery-staple" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
+
+    await waitFor(() => {
+      expect(screen.getByRole("link", { name: /Contacts/i })).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole("link", { name: /Contacts/i }));
+
+    await waitFor(() => {
+      expect(screen.getByText("No incoming requests.")).toBeInTheDocument();
+    });
+
+    incomingRequests = [
+      {
+        id: "request-live-1",
+        requester_user_id: "user-7",
+        requester_username: "live.friend",
+        recipient_user_id: "user-1",
+        recipient_username: "Preview User",
+        request_text: "Realtime hello",
+        status: "pending",
+        created_at: "2026-04-19T18:00:00Z",
+      },
+    ];
+
+    await act(async () => {
+      MockWebSocket.instances[0]?.emit({ type: "friendships.updated" });
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText("live.friend")).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Accept" })).toBeInTheDocument();
+    });
+  });
+
+  it("refreshes the direct-message list after accepting a friendship request", async () => {
+    let incomingRequests = [
+      {
+        id: "request-accept-1",
+        requester_user_id: "user-7",
+        requester_username: "live.friend",
+        recipient_user_id: "user-1",
+        recipient_username: "Preview User",
+        request_text: "Let's chat",
+        status: "pending",
+        created_at: "2026-04-19T18:00:00Z",
+      },
+    ];
+    let directMessages = [];
+
+    fetchMock.mockImplementation(async (input, init) => {
+      const url = typeof input === "string" ? input : input.toString();
+
+      if (url.endsWith("/api/auth/me")) {
+        return new Response(JSON.stringify({ detail: "Authentication required." }), {
+          status: 401,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      if (url.endsWith("/api/auth/login") && init?.method === "POST") {
+        return new Response(
+          JSON.stringify({
+            user: {
+              id: "user-1",
+              username: "Preview User",
+              email: "preview@agentic.chat",
+            },
+          }),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          },
+        );
+      }
+
+      if (url.includes("/api/rooms/mine")) {
+        return new Response(JSON.stringify({ rooms: [] }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      if (url.includes("/api/rooms/public")) {
+        return new Response(JSON.stringify({ rooms: [] }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      if (url.endsWith("/api/rooms/invitations/mine")) {
+        return new Response(JSON.stringify({ invitations: [] }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      if (url.endsWith("/api/dms/mine")) {
+        return new Response(JSON.stringify({ direct_messages: directMessages }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      if (url.endsWith("/api/friends") && (!init?.method || init.method === "GET")) {
+        return new Response(
+          JSON.stringify({
+            friends: directMessages.length
+              ? [
+                  {
+                    friendship_id: "friendship-1",
+                    user_id: "user-7",
+                    username: "live.friend",
+                    presence_status: "online",
+                    created_at: "2026-04-19T18:01:00Z",
+                  },
+                ]
+              : [],
+          }),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          },
+        );
+      }
+
+      if (url.endsWith("/api/friends/requests") && (!init?.method || init.method === "GET")) {
+        return new Response(
+          JSON.stringify({
+            incoming_requests: incomingRequests,
+            outgoing_requests: [],
+          }),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          },
+        );
+      }
+
+      if (
+        url.endsWith("/api/friends/requests/request-accept-1/accept") &&
+        init?.method === "POST"
+      ) {
+        incomingRequests = [];
+        directMessages = [
+          {
+            id: "dm-1",
+            counterpart_user_id: "user-7",
+            counterpart_username: "live.friend",
+            counterpart_presence_status: "online",
+            status: "active",
+            created_at: "2026-04-19T18:01:00Z",
+            is_initiator: false,
+            can_message: true,
+            unread_count: 0,
+          },
+        ];
+
+        return new Response(
+          JSON.stringify({
+            friendship_id: "friendship-1",
+            user_id: "user-7",
+            username: "live.friend",
+            presence_status: "online",
+            created_at: "2026-04-19T18:01:00Z",
+          }),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          },
+        );
+      }
+
+      return new Response(JSON.stringify({ detail: "Unhandled request in test." }), {
+        status: 500,
+        headers: { "Content-Type": "application/json" },
+      });
+    });
+
+    renderRoutes(["/signin"]);
+
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { name: "Sign in" })).toBeInTheDocument();
+    });
+
+    fireEvent.change(screen.getByLabelText("Email"), {
+      target: { value: "preview@agentic.chat" },
+    });
+    fireEvent.change(screen.getByLabelText("Password"), {
+      target: { value: "correct-horse-battery-staple" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
+
+    await waitFor(() => {
+      expect(screen.getByRole("link", { name: /Contacts/i })).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole("link", { name: /Contacts/i }));
+
+    await waitFor(() => {
+      expect(screen.getByText("No direct messages yet. Open your first one by username.")).toBeInTheDocument();
+      expect(screen.getByText("live.friend")).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Accept" }));
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "live.friend online" })).toBeInTheDocument();
+      expect(screen.getByText("You are now friends with live.friend.")).toBeInTheDocument();
     });
   });
 

@@ -8,6 +8,7 @@ import {
   useState,
 } from "react";
 
+import { useFriends } from "../../features/friends/use-friends";
 import { useRooms } from "../../features/rooms/use-rooms";
 import { usePresence } from "../../features/presence/use-presence";
 import { useSession } from "../../features/session/use-session";
@@ -59,6 +60,7 @@ function upsertConversationMessage(
 export function ChatsPage() {
   const { user } = useSession();
   const { getPresence, setMany } = usePresence();
+  const { getFriendshipState, sendFriendRequest } = useFriends();
   const {
     clearUnread,
     inviteToRoom,
@@ -88,6 +90,7 @@ export function ChatsPage() {
   const [isSubmittingMessage, setIsSubmittingMessage] = useState(false);
   const [isLoadingOlderMessages, setIsLoadingOlderMessages] = useState(false);
   const [removingMemberId, setRemovingMemberId] = useState<string | null>(null);
+  const [requestingFriendId, setRequestingFriendId] = useState<string | null>(null);
   const [updatingMessageId, setUpdatingMessageId] = useState<number | null>(null);
   const messageListRef = useRef<HTMLDivElement | null>(null);
   const shouldAutoScrollRef = useRef(false);
@@ -406,6 +409,21 @@ export function ChatsPage() {
       setPanelError(getApiErrorMessage(error, "Unable to remove that member right now."));
     } finally {
       setRemovingMemberId(null);
+    }
+  }
+
+  async function handleSendFriendRequest(member: RoomMember) {
+    setPanelError(null);
+    setPanelNotice(null);
+    setRequestingFriendId(member.id);
+
+    try {
+      await sendFriendRequest({ username: member.username });
+      setPanelNotice(`Friend request sent to ${member.username}.`);
+    } catch (error) {
+      setPanelError(getApiErrorMessage(error, "Unable to send that friend request right now."));
+    } finally {
+      setRequestingFriendId(null);
     }
   }
 
@@ -921,18 +939,38 @@ export function ChatsPage() {
                         </span>
                       </small>
                     </div>
-                    {member.can_remove ? (
-                      <button
-                        className="ghost-button sidebar-action-button"
-                        type="button"
-                        disabled={removingMemberId === member.id}
-                        onClick={() => {
-                          void handleRemoveMember(member);
-                        }}
-                      >
-                        {removingMemberId === member.id ? "Removing..." : "Remove"}
-                      </button>
-                    ) : null}
+                    <div className="room-member-actions">
+                      {getFriendshipState(member.id) === "friend" ? (
+                        <span className="sidebar-muted">Friend</span>
+                      ) : getFriendshipState(member.id) === "outgoing_request" ? (
+                        <span className="sidebar-muted">Request sent</span>
+                      ) : getFriendshipState(member.id) === "incoming_request" ? (
+                        <span className="sidebar-muted">Sent you a request</span>
+                      ) : getFriendshipState(member.id) === "none" ? (
+                        <button
+                          className="ghost-button sidebar-action-button"
+                          type="button"
+                          disabled={requestingFriendId === member.id}
+                          onClick={() => {
+                            void handleSendFriendRequest(member);
+                          }}
+                        >
+                          {requestingFriendId === member.id ? "Sending..." : "Add friend"}
+                        </button>
+                      ) : null}
+                      {member.can_remove ? (
+                        <button
+                          className="ghost-button sidebar-action-button"
+                          type="button"
+                          disabled={removingMemberId === member.id}
+                          onClick={() => {
+                            void handleRemoveMember(member);
+                          }}
+                        >
+                          {removingMemberId === member.id ? "Removing..." : "Remove"}
+                        </button>
+                      ) : null}
+                    </div>
                   </li>
                 ))}
               </ul>
