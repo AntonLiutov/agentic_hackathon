@@ -19,6 +19,7 @@ from app.api.schemas.rooms import (
 )
 from app.auth.service import get_auth_context
 from app.core.config import Settings
+from app.friends.service import get_friendship_states
 from app.presence.service import PresenceService
 from app.rooms.service import (
     accept_room_invitation,
@@ -158,10 +159,18 @@ async def get_room_members(
     presence_by_user_id = await presence_service.get_user_statuses(
         [member.id for member in members]
     )
+    friendship_states = await get_friendship_states(
+        db,
+        user_id=auth_context.user.id,
+        target_user_ids=[member.id for member in members],
+    )
     return RoomMemberListResponse(
         members=[
             member.model_copy(
-                update={"presence_status": presence_by_user_id.get(member.id, "offline")}
+                update={
+                    "presence_status": presence_by_user_id.get(member.id, "offline"),
+                    "friendship_state": friendship_states.get(member.id, "none"),
+                }
             )
             for member in members
         ]

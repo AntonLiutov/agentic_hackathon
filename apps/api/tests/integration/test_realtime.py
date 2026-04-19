@@ -186,3 +186,31 @@ def test_dm_realtime_message_permissions_are_projected_per_recipient(
         assert created_event["message"]["body_text"] == "Owner DM message for recipient permissions"
         assert created_event["message"]["can_edit"] is False
         assert created_event["message"]["can_delete"] is False
+
+
+def test_inbox_websocket_streams_friendship_events(auth_client: TestClient) -> None:
+    _register_user(auth_client, email="rt-friends-alpha@example.com", username="rt.friends.alpha")
+    auth_client.post("/api/auth/logout")
+    _register_user(auth_client, email="rt-friends-beta@example.com", username="rt.friends.beta")
+    auth_client.post("/api/auth/logout")
+
+    _login_user(auth_client, email="rt-friends-beta@example.com")
+
+    with auth_client.websocket_connect("/ws/inbox") as websocket:
+        subscribed_event = websocket.receive_json()
+        assert subscribed_event["type"] == "inbox.subscribed"
+
+        auth_client.post("/api/auth/logout")
+        _login_user(auth_client, email="rt-friends-alpha@example.com")
+
+        create_response = auth_client.post(
+            "/api/friends/requests",
+            json={
+                "username": "rt.friends.beta",
+                "message": "Realtime social sync check.",
+            },
+        )
+        assert create_response.status_code == 201
+
+        friendship_event = websocket.receive_json()
+        assert friendship_event["type"] == "friendships.updated"

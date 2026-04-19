@@ -6,6 +6,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, StringConstraints
 
+from app.api.schemas.friends import FriendshipState
 from app.api.schemas.presence import PresenceStatus
 from app.db.models.enums import InvitationStatus, RoomVisibility
 
@@ -84,6 +85,7 @@ class RoomMemberResponse(BaseModel):
     is_admin: bool
     can_remove: bool
     presence_status: PresenceStatus = "offline"
+    friendship_state: FriendshipState = "none"
 
 
 class RoomMemberListResponse(BaseModel):

@@ -12,6 +12,11 @@ import {
 
 import { getApiErrorMessage } from "../../shared/api/client";
 import { useDirectMessages } from "../../features/direct-messages/use-direct-messages";
+import { useFriends } from "../../features/friends/use-friends";
+import {
+  type FriendRequestSummary,
+  type FriendSummary,
+} from "../../shared/api/friends";
 import {
   messagesApi,
   type ConversationMessage,
@@ -23,6 +28,15 @@ import { useConversationRealtime } from "../../shared/realtime/useConversationRe
 
 function formatMessageTime(value: string) {
   return new Date(value).toLocaleTimeString([], {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+function formatDateTime(value: string) {
+  return new Date(value).toLocaleString([], {
+    month: "short",
+    day: "numeric",
     hour: "2-digit",
     minute: "2-digit",
   });
@@ -63,6 +77,15 @@ export function ContactsPage() {
   const { getPresence, setMany } = usePresence();
   const { setPanelContent } = useWorkspaceContextPanel();
   const {
+    acceptFriendRequest,
+    friends,
+    incomingRequests,
+    outgoingRequests,
+    rejectFriendRequest,
+    removeFriend,
+    sendFriendRequest,
+  } = useFriends();
+  const {
     clearMessages: clearDirectMessageMessages,
     clearUnread,
     directMessages,
@@ -70,11 +93,14 @@ export function ContactsPage() {
     isLoading,
     noticeMessage: directMessagesNotice,
     openDirectMessage,
+    refreshDirectMessages,
     selectedDirectMessage,
     selectedDirectMessageId,
     selectDirectMessage,
   } = useDirectMessages();
-  const [username, setUsername] = useState("");
+  const [directMessageUsername, setDirectMessageUsername] = useState("");
+  const [friendRequestUsername, setFriendRequestUsername] = useState("");
+  const [friendRequestMessage, setFriendRequestMessage] = useState("");
   const [composeText, setComposeText] = useState("");
   const [messages, setMessages] = useState<ConversationMessage[]>([]);
   const [sequenceHead, setSequenceHead] = useState(0);
@@ -85,8 +111,11 @@ export function ContactsPage() {
   const [isLoadingMessages, setIsLoadingMessages] = useState(false);
   const [isLoadingOlderMessages, setIsLoadingOlderMessages] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isSubmittingFriendRequest, setIsSubmittingFriendRequest] = useState(false);
   const [isSubmittingMessage, setIsSubmittingMessage] = useState(false);
   const [updatingMessageId, setUpdatingMessageId] = useState<number | null>(null);
+  const [processingFriendRequestId, setProcessingFriendRequestId] = useState<string | null>(null);
+  const [removingFriendUserId, setRemovingFriendUserId] = useState<string | null>(null);
   const [pageErrorMessage, setPageErrorMessage] = useState<string | null>(null);
   const [pageNoticeMessage, setPageNoticeMessage] = useState<string | null>(null);
   const messageListRef = useRef<HTMLDivElement | null>(null);
@@ -107,6 +136,19 @@ export function ContactsPage() {
       })),
     );
   }, [directMessages, setMany]);
+
+  useEffect(() => {
+    if (friends.length === 0) {
+      return;
+    }
+
+    setMany(
+      friends.map((friend) => ({
+        userId: friend.user_id,
+        status: friend.presence_status,
+      })),
+    );
+  }, [friends, setMany]);
 
   const loadLatestMessages = useCallback(async (conversationId: string) => {
     const response = await messagesApi.list(conversationId, MESSAGE_PAGE_SIZE);
@@ -248,14 +290,100 @@ export function ContactsPage() {
     setIsSubmitting(true);
 
     try {
-      await openDirectMessage({ username });
-      setUsername("");
+      await openDirectMessage({ username: directMessageUsername });
+      setDirectMessageUsername("");
     } catch (error) {
       setPageErrorMessage(getApiErrorMessage(error, "Unable to open that direct message right now."));
     } finally {
       setIsSubmitting(false);
     }
-  }, [openDirectMessage, username]);
+  }, [directMessageUsername, openDirectMessage]);
+
+  const handleSendFriendRequest = useCallback(
+    async (event: FormEvent<HTMLFormElement>) => {
+      event.preventDefault();
+      setPageErrorMessage(null);
+      setPageNoticeMessage(null);
+      setIsSubmittingFriendRequest(true);
+
+      try {
+        const friendRequest = await sendFriendRequest({
+          username: friendRequestUsername,
+          message: friendRequestMessage.trim() ? friendRequestMessage.trim() : undefined,
+        });
+        setFriendRequestUsername("");
+        setFriendRequestMessage("");
+        setPageNoticeMessage(`Friend request sent to ${friendRequest.recipient_username}.`);
+      } catch (error) {
+        setPageErrorMessage(
+          getApiErrorMessage(error, "Unable to send that friend request right now."),
+        );
+      } finally {
+        setIsSubmittingFriendRequest(false);
+      }
+    },
+    [friendRequestMessage, friendRequestUsername, sendFriendRequest],
+  );
+
+  async function handleAcceptFriendRequest(friendRequest: FriendRequestSummary) {
+    setPageErrorMessage(null);
+    setPageNoticeMessage(null);
+    setProcessingFriendRequestId(friendRequest.id);
+
+    try {
+      const acceptedFriend = await acceptFriendRequest(friendRequest.id);
+      await refreshDirectMessages();
+      setPageNoticeMessage(`You are now friends with ${acceptedFriend.username}.`);
+    } catch (error) {
+      setPageErrorMessage(getApiErrorMessage(error, "Unable to accept that friend request."));
+    } finally {
+      setProcessingFriendRequestId(null);
+    }
+  }
+
+  async function handleRejectFriendRequest(friendRequest: FriendRequestSummary) {
+    setPageErrorMessage(null);
+    setPageNoticeMessage(null);
+    setProcessingFriendRequestId(friendRequest.id);
+
+    try {
+      await rejectFriendRequest(friendRequest.id);
+      setPageNoticeMessage(`Friend request from ${friendRequest.requester_username} rejected.`);
+    } catch (error) {
+      setPageErrorMessage(getApiErrorMessage(error, "Unable to reject that friend request."));
+    } finally {
+      setProcessingFriendRequestId(null);
+    }
+  }
+
+  async function handleRemoveFriend(friend: FriendSummary) {
+    setPageErrorMessage(null);
+    setPageNoticeMessage(null);
+    setRemovingFriendUserId(friend.user_id);
+
+    try {
+      await removeFriend(friend.user_id);
+      setPageNoticeMessage(`${friend.username} removed from your friends list.`);
+    } catch (error) {
+      setPageErrorMessage(getApiErrorMessage(error, "Unable to remove that friend right now."));
+    } finally {
+      setRemovingFriendUserId(null);
+    }
+  }
+
+  async function handleOpenFriendDirectMessage(friend: FriendSummary) {
+    setPageErrorMessage(null);
+    setPageNoticeMessage(null);
+
+    try {
+      await openDirectMessage({ username: friend.username });
+      setPageNoticeMessage(`Direct message ready with ${friend.username}.`);
+    } catch (error) {
+      setPageErrorMessage(
+        getApiErrorMessage(error, "Unable to open that direct message right now."),
+      );
+    }
+  }
 
   function resetComposerState() {
     setComposeText("");
@@ -413,8 +541,8 @@ export function ContactsPage() {
               <input
                 type="text"
                 placeholder="alice"
-                value={username}
-                onChange={(event) => setUsername(event.target.value)}
+                value={directMessageUsername}
+                onChange={(event) => setDirectMessageUsername(event.target.value)}
                 minLength={3}
                 maxLength={64}
                 required
@@ -425,9 +553,168 @@ export function ContactsPage() {
             </button>
           </form>
         </div>
+
+        <div className="context-block">
+          <strong>Send friend request</strong>
+          <form className="auth-form" onSubmit={handleSendFriendRequest}>
+            <label>
+              <span>Username</span>
+              <input
+                type="text"
+                placeholder="alice"
+                value={friendRequestUsername}
+                onChange={(event) => setFriendRequestUsername(event.target.value)}
+                minLength={3}
+                maxLength={64}
+                required
+              />
+            </label>
+            <label>
+              <span>Message</span>
+              <input
+                type="text"
+                placeholder="Optional note"
+                value={friendRequestMessage}
+                onChange={(event) => setFriendRequestMessage(event.target.value)}
+                maxLength={500}
+              />
+            </label>
+            <button className="primary-button" type="submit" disabled={isSubmittingFriendRequest}>
+              {isSubmittingFriendRequest ? "Sending..." : "Send friend request"}
+            </button>
+          </form>
+        </div>
+
+        <div className="context-block">
+          <strong>Friends</strong>
+          {friends.length === 0 ? (
+            <p>No friends yet.</p>
+          ) : (
+            <ul className="contacts-stack">
+              {friends.map((friend) => (
+                <li key={friend.friendship_id} className="contacts-list-item">
+                  <div>
+                    <span>{friend.username}</span>
+                    <small className="presence-inline">
+                      <span
+                        className={`presence-dot presence-dot--${
+                          getPresence(friend.user_id) ?? friend.presence_status ?? "offline"
+                        }`}
+                      />
+                      {formatPresenceLabel(
+                        getPresence(friend.user_id) ?? friend.presence_status ?? "offline",
+                      )}
+                    </small>
+                  </div>
+                  <div className="contacts-inline-actions">
+                    <button
+                      className="ghost-button sidebar-action-button"
+                      type="button"
+                      onClick={() => {
+                        void handleOpenFriendDirectMessage(friend);
+                      }}
+                    >
+                      Open DM
+                    </button>
+                    <button
+                      className="ghost-button sidebar-action-button"
+                      type="button"
+                      disabled={removingFriendUserId === friend.user_id}
+                      onClick={() => {
+                        void handleRemoveFriend(friend);
+                      }}
+                    >
+                      {removingFriendUserId === friend.user_id ? "Removing..." : "Remove"}
+                    </button>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+
+        <div className="context-block">
+          <strong>Incoming requests</strong>
+          {incomingRequests.length === 0 ? (
+            <p>No incoming requests.</p>
+          ) : (
+            <ul className="contacts-stack">
+              {incomingRequests.map((friendRequest) => (
+                <li key={friendRequest.id} className="contacts-list-item">
+                  <div>
+                    <span>{friendRequest.requester_username}</span>
+                    <small>
+                      {friendRequest.request_text ?? "No message"} •{" "}
+                      {formatDateTime(friendRequest.created_at)}
+                    </small>
+                  </div>
+                  <div className="contacts-inline-actions">
+                    <button
+                      className="ghost-button sidebar-action-button"
+                      type="button"
+                      disabled={processingFriendRequestId === friendRequest.id}
+                      onClick={() => {
+                        void handleAcceptFriendRequest(friendRequest);
+                      }}
+                    >
+                      {processingFriendRequestId === friendRequest.id ? "Saving..." : "Accept"}
+                    </button>
+                    <button
+                      className="ghost-button sidebar-action-button"
+                      type="button"
+                      disabled={processingFriendRequestId === friendRequest.id}
+                      onClick={() => {
+                        void handleRejectFriendRequest(friendRequest);
+                      }}
+                    >
+                      Reject
+                    </button>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+
+        <div className="context-block">
+          <strong>Outgoing requests</strong>
+          {outgoingRequests.length === 0 ? (
+            <p>No outgoing requests.</p>
+          ) : (
+            <ul className="contacts-stack">
+              {outgoingRequests.map((friendRequest) => (
+                <li key={friendRequest.id} className="contacts-list-item">
+                  <div>
+                    <span>{friendRequest.recipient_username}</span>
+                    <small>
+                      {friendRequest.request_text ?? "Awaiting response"} •{" "}
+                      {formatDateTime(friendRequest.created_at)}
+                    </small>
+                  </div>
+                  <span className="sidebar-muted">Pending</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
       </>
     ),
-    [handleOpenDirectMessage, isSubmitting, username],
+    [
+      friendRequestMessage,
+      friendRequestUsername,
+      friends,
+      getPresence,
+      handleOpenDirectMessage,
+      handleSendFriendRequest,
+      incomingRequests,
+      isSubmitting,
+      isSubmittingFriendRequest,
+      outgoingRequests,
+      processingFriendRequestId,
+      refreshDirectMessages,
+      removingFriendUserId,
+      directMessageUsername,
+    ],
   );
 
   useEffect(() => {

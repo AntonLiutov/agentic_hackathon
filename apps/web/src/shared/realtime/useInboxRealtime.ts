@@ -9,6 +9,7 @@ type UseInboxRealtimeOptions = {
   enabled: boolean;
   onUnread: (conversationId: string, sequenceHead: number) => void;
   onPresence?: (userId: string, presenceStatus: PresenceStatus) => void;
+  onFriendshipsChanged?: () => void;
   onConnected?: () => void;
 };
 
@@ -27,6 +28,9 @@ type InboxEnvelope =
       presence_status: PresenceStatus;
     }
   | {
+      type: "friendships.updated";
+    }
+  | {
       type: "pong";
     };
 
@@ -34,6 +38,7 @@ export function useInboxRealtime({
   enabled,
   onUnread,
   onPresence,
+  onFriendshipsChanged,
   onConnected,
 }: UseInboxRealtimeOptions) {
   const [status, setStatus] = useState<InboxRealtimeStatus>("idle");
@@ -43,6 +48,7 @@ export function useInboxRealtime({
   const handlersRef = useRef({
     onUnread,
     onPresence,
+    onFriendshipsChanged,
     onConnected,
   });
 
@@ -50,9 +56,10 @@ export function useInboxRealtime({
     handlersRef.current = {
       onUnread,
       onPresence,
+      onFriendshipsChanged,
       onConnected,
     };
-  }, [onConnected, onPresence, onUnread]);
+  }, [onConnected, onFriendshipsChanged, onPresence, onUnread]);
 
   useEffect(() => {
     if (!enabled || typeof WebSocket === "undefined") {
@@ -98,6 +105,11 @@ export function useInboxRealtime({
 
         if (payload.type === "presence.updated") {
           handlersRef.current.onPresence?.(payload.user_id, payload.presence_status);
+          return;
+        }
+
+        if (payload.type === "friendships.updated") {
+          handlersRef.current.onFriendshipsChanged?.();
         }
       };
 

@@ -179,6 +179,7 @@ describe("Message lifecycle", () => {
                 is_owner: true,
                 is_admin: true,
                 can_remove: false,
+                friendship_state: "self",
               },
               {
                 id: "user-2",
@@ -188,6 +189,7 @@ describe("Message lifecycle", () => {
                 is_owner: false,
                 is_admin: false,
                 can_remove: true,
+                friendship_state: "none",
               },
             ],
           }),
@@ -304,6 +306,26 @@ describe("Message lifecycle", () => {
           status: 200,
           headers: { "Content-Type": "application/json" },
         });
+      }
+
+      if (url.endsWith("/api/friends")) {
+        return new Response(JSON.stringify({ friends: [] }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      if (url.endsWith("/api/friends/requests")) {
+        return new Response(
+          JSON.stringify({
+            incoming_requests: [],
+            outgoing_requests: [],
+          }),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          },
+        );
       }
 
       return new Response(JSON.stringify({ detail: "Unhandled request in test." }), {
@@ -426,6 +448,26 @@ describe("Message lifecycle", () => {
           status: 200,
           headers: { "Content-Type": "application/json" },
         });
+      }
+
+      if (url.endsWith("/api/friends")) {
+        return new Response(JSON.stringify({ friends: [] }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      if (url.endsWith("/api/friends/requests")) {
+        return new Response(
+          JSON.stringify({
+            incoming_requests: [],
+            outgoing_requests: [],
+          }),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          },
+        );
       }
 
       if (url.includes("/api/conversations/dm-preview/messages") && (!init?.method || init.method === "GET")) {
@@ -631,6 +673,7 @@ describe("Message lifecycle", () => {
                 is_owner: true,
                 is_admin: true,
                 can_remove: false,
+                friendship_state: "self",
               },
             ],
           }),
@@ -683,6 +726,26 @@ describe("Message lifecycle", () => {
           status: 200,
           headers: { "Content-Type": "application/json" },
         });
+      }
+
+      if (url.endsWith("/api/friends")) {
+        return new Response(JSON.stringify({ friends: [] }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      if (url.endsWith("/api/friends/requests")) {
+        return new Response(
+          JSON.stringify({
+            incoming_requests: [],
+            outgoing_requests: [],
+          }),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          },
+        );
       }
 
       return new Response(JSON.stringify({ detail: "Unhandled request in test." }), {
@@ -793,6 +856,7 @@ describe("Message lifecycle", () => {
                 is_owner: true,
                 is_admin: true,
                 can_remove: false,
+                friendship_state: "self",
               },
             ],
           }),
@@ -841,6 +905,26 @@ describe("Message lifecycle", () => {
           status: 200,
           headers: { "Content-Type": "application/json" },
         });
+      }
+
+      if (url.endsWith("/api/friends")) {
+        return new Response(JSON.stringify({ friends: [] }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      if (url.endsWith("/api/friends/requests")) {
+        return new Response(
+          JSON.stringify({
+            incoming_requests: [],
+            outgoing_requests: [],
+          }),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          },
+        );
       }
 
       return new Response(JSON.stringify({ detail: "Unhandled request in test." }), {
