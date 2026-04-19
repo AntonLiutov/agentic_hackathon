@@ -6,6 +6,7 @@ from typing import AsyncIterator
 
 from fastapi import FastAPI
 
+from app.attachments.service import ensure_attachments_dir
 from app.cache.redis import RedisManager
 from app.core.config import Settings, get_settings
 from app.db.session import DatabaseManager
@@ -35,6 +36,7 @@ async def _run_presence_sweeper(app: FastAPI) -> None:
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     settings: Settings = get_settings()
+    ensure_attachments_dir(settings.attachments_dir)
     app.state.settings = settings
     app.state.database = DatabaseManager(settings.database_url)
     app.state.redis = RedisManager(settings.redis_url)

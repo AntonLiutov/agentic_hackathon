@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.api.routes.attachments import router as attachments_router
 from app.api.routes.auth import router as auth_router
 from app.api.routes.blocks import router as blocks_router
 from app.api.routes.dms import router as dms_router
@@ -49,6 +50,10 @@ openapi_tags = [
         "description": "Shared room and direct-message message lifecycle endpoints.",
     },
     {
+        "name": "attachments",
+        "description": "Attachment upload, rendering, and file download endpoints.",
+    },
+    {
         "name": "realtime",
         "description": "Authenticated WebSocket delivery for live conversation updates.",
     },
@@ -82,6 +87,7 @@ app.add_middleware(
 )
 
 app.include_router(auth_router)
+app.include_router(attachments_router)
 app.include_router(blocks_router)
 app.include_router(dms_router)
 app.include_router(friends_router)

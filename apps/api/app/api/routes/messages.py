@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from uuid import UUID
 
-from fastapi import APIRouter, Body, Depends, Query, Request, status
+from fastapi import APIRouter, Body, Depends, File, Form, Query, Request, UploadFile, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -18,11 +18,13 @@ from app.api.schemas.messages import (
     CreateMessageRequest,
     EditMessageRequest,
 )
+from app.attachments.service import delete_attachment_file, persist_upload
 from app.auth.service import get_auth_context
 from app.core.config import Settings
 from app.db.models.identity import User
 from app.messages.service import (
     create_message,
+    create_message_with_attachments,
     delete_message,
     edit_message,
     get_message,
@@ -171,6 +173,88 @@ async def post_conversation_message(
         conversation_id=conversation_id,
         payload=payload,
     )
+    messages_by_user_id = await _build_broadcast_messages_by_user_id(
+        db,
+        realtime_manager=realtime_manager,
+        conversation_id=conversation_id,
+        message_id=message.id,
+        actor=auth_context.user,
+        actor_message=message,
+    )
+    await realtime_manager.broadcast_message_event(
+        conversation_id=conversation_id,
+        event_type="message.created",
+        messages_by_user_id=messages_by_user_id,
+        sequence_head=message.sequence_number,
+    )
+    recipient_user_ids = [
+        user_id
+        for user_id in await list_conversation_member_ids(db, conversation_id=conversation_id)
+        if user_id != auth_context.user.id
+    ]
+    await realtime_manager.broadcast_inbox_unread_event(
+        user_ids=recipient_user_ids,
+        conversation_id=conversation_id,
+        sequence_head=message.sequence_number,
+    )
+    return message
+
+
+@router.post(
+    "/api/conversations/{conversation_id}/messages/attachments",
+    response_model=ConversationMessageResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Create a new message with uploaded attachments",
+    description=(
+        "Uploads one or more attachments to local storage and creates a persisted room or "
+        "direct-message record that references them. Body text is optional when at least one "
+        "attachment is included."
+    ),
+)
+async def post_conversation_message_with_attachments(
+    conversation_id: UUID,
+    request: Request,
+    files: list[UploadFile] = File(...),
+    body_text: str | None = Form(default=None),
+    reply_to_message_id: int | None = Form(default=None),
+    attachment_comment: str | None = Form(default=None),
+    db: AsyncSession = Depends(get_db_session),
+    realtime_manager: RealtimeConnectionManager = Depends(get_realtime_manager),
+    settings: Settings = Depends(get_settings_from_request),
+) -> ConversationMessageResponse:
+    auth_context = await get_auth_context(
+        db,
+        settings=settings,
+        session_token=request.cookies.get(settings.session_cookie_name),
+        touch_session=False,
+        required=True,
+    )
+    normalized_comment = attachment_comment.strip() if attachment_comment else None
+    stored_attachments = []
+    try:
+        for uploaded_file in files:
+            stored_attachments.append(
+                await persist_upload(
+                    uploaded_file,
+                    settings=settings,
+                    comment_text=normalized_comment,
+                )
+            )
+        message = await create_message_with_attachments(
+            db,
+            user=auth_context.user,
+            conversation_id=conversation_id,
+            body_text=body_text,
+            reply_to_message_id=reply_to_message_id,
+            attachments=stored_attachments,
+        )
+    except Exception:
+        for stored_attachment in stored_attachments:
+            delete_attachment_file(
+                settings=settings,
+                storage_key=stored_attachment.storage_key,
+            )
+        raise
     messages_by_user_id = await _build_broadcast_messages_by_user_id(
         db,
         realtime_manager=realtime_manager,

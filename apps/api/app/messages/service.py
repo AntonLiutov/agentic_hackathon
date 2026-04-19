@@ -14,12 +14,14 @@ from app.api.schemas.messages import (
     ConversationReadResponse,
     CreateMessageRequest,
     EditMessageRequest,
+    MessageAttachmentResponse,
     MessageReplyReferenceResponse,
 )
+from app.attachments.service import StoredAttachmentInput
 from app.db.models.conversation import Conversation, ConversationMember, DmMetadata
 from app.db.models.enums import ConversationType, DmStatus
 from app.db.models.identity import User
-from app.db.models.message import ConversationRead, Message
+from app.db.models.message import Attachment, ConversationRead, Message, MessageAttachment
 from app.rooms.service import get_room_access_context
 
 
@@ -146,7 +148,53 @@ def _message_projection_query(
     )
 
 
-def _project_message(row: tuple) -> ConversationMessageResponse:
+def _build_attachment_response(attachment: Attachment) -> MessageAttachmentResponse:
+    is_image = bool(attachment.media_type and attachment.media_type.startswith("image/"))
+    content_path = f"/api/attachments/{attachment.id}"
+
+    return MessageAttachmentResponse(
+        id=attachment.id,
+        original_filename=attachment.original_filename,
+        media_type=attachment.media_type,
+        size_bytes=attachment.size_bytes,
+        comment_text=attachment.comment_text,
+        content_path=content_path,
+        download_path=f"{content_path}?download=1",
+        is_image=is_image,
+    )
+
+
+async def _load_attachments_for_message_ids(
+    db: AsyncSession,
+    *,
+    message_ids: list[int],
+) -> dict[int, list[MessageAttachmentResponse]]:
+    if not message_ids:
+        return {}
+
+    rows = (
+        await db.execute(
+            select(MessageAttachment.message_id, Attachment)
+            .join(Attachment, Attachment.id == MessageAttachment.attachment_id)
+            .where(MessageAttachment.message_id.in_(message_ids))
+            .order_by(MessageAttachment.message_id.asc(), Attachment.created_at.asc())
+        )
+    ).all()
+
+    attachments_by_message_id: dict[int, list[MessageAttachmentResponse]] = {}
+    for message_id, attachment in rows:
+        attachments_by_message_id.setdefault(message_id, []).append(
+            _build_attachment_response(attachment)
+        )
+
+    return attachments_by_message_id
+
+
+def _project_message(
+    row: tuple,
+    *,
+    attachments_by_message_id: dict[int, list[MessageAttachmentResponse]],
+) -> ConversationMessageResponse:
     (
         message_id,
         conversation_id,
@@ -191,6 +239,7 @@ def _project_message(row: tuple) -> ConversationMessageResponse:
         is_deleted=deleted_at is not None,
         can_edit=bool(can_edit) and deleted_at is None,
         can_delete=bool(can_delete) and deleted_at is None,
+        attachments=attachments_by_message_id.get(message_id, []),
     )
 
 
@@ -236,9 +285,16 @@ async def list_recent_messages(
     rows = (await db.execute(query.limit(limit + 1))).all()
     has_older = len(rows) > limit
     page_rows = rows[:limit]
+    attachments_by_message_id = await _load_attachments_for_message_ids(
+        db,
+        message_ids=[int(row[0]) for row in page_rows],
+    )
     messages = [
         _apply_direct_message_read_only_state(
-            _project_message(row),
+            _project_message(
+                row,
+                attachments_by_message_id=attachments_by_message_id,
+            ),
             access_context=access_context,
         )
         for row in reversed(page_rows)
@@ -384,12 +440,33 @@ async def list_conversation_member_ids(
     return list(rows.scalars().all())
 
 
-async def create_message(
+def _normalize_body_text(body_text: str | None) -> str | None:
+    if body_text is None:
+        return None
+    normalized = body_text.strip()
+    return normalized or None
+
+
+def _validate_new_message_content(
+    *,
+    body_text: str | None,
+    attachments: list[StoredAttachmentInput],
+) -> None:
+    if body_text is None and not attachments:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Messages must include text or at least one attachment.",
+        )
+
+
+async def _create_message_record(
     db: AsyncSession,
     *,
     user: User,
     conversation_id: UUID,
-    payload: CreateMessageRequest,
+    body_text: str | None,
+    reply_to_message_id: int | None,
+    attachments: list[StoredAttachmentInput],
 ) -> ConversationMessageResponse:
     access_context = await get_conversation_access_context(
         db,
@@ -397,24 +474,47 @@ async def create_message(
         user=user,
     )
 
-    if payload.reply_to_message_id is not None:
+    if reply_to_message_id is not None:
         await _get_reply_target(
             db,
             conversation_id=conversation_id,
-            reply_to_message_id=payload.reply_to_message_id,
+            reply_to_message_id=reply_to_message_id,
         )
 
     _ensure_direct_message_is_active(access_context)
+
+    normalized_body_text = _normalize_body_text(body_text)
+    _validate_new_message_content(body_text=normalized_body_text, attachments=attachments)
 
     sequence_number = await _next_sequence_number(db, conversation_id=conversation_id)
     message = Message(
         conversation_id=conversation_id,
         author_user_id=user.id,
         sequence_number=sequence_number,
-        body_text=payload.body_text,
-        reply_to_message_id=payload.reply_to_message_id,
+        body_text=normalized_body_text,
+        reply_to_message_id=reply_to_message_id,
     )
     db.add(message)
+    await db.flush()
+
+    for attachment in attachments:
+        attachment_record = Attachment(
+            storage_key=attachment.storage_key,
+            original_filename=attachment.original_filename,
+            media_type=attachment.media_type,
+            size_bytes=attachment.size_bytes,
+            uploader_user_id=user.id,
+            comment_text=attachment.comment_text,
+        )
+        db.add(attachment_record)
+        await db.flush()
+        db.add(
+            MessageAttachment(
+                message_id=message.id,
+                attachment_id=attachment_record.id,
+            )
+        )
+
     await _set_conversation_read_state(
         db,
         conversation_id=conversation_id,
@@ -429,6 +529,42 @@ async def create_message(
         user=user,
         message_id=message.id,
         access_context=access_context,
+    )
+
+
+async def create_message(
+    db: AsyncSession,
+    *,
+    user: User,
+    conversation_id: UUID,
+    payload: CreateMessageRequest,
+) -> ConversationMessageResponse:
+    return await _create_message_record(
+        db,
+        user=user,
+        conversation_id=conversation_id,
+        body_text=payload.body_text,
+        reply_to_message_id=payload.reply_to_message_id,
+        attachments=[],
+    )
+
+
+async def create_message_with_attachments(
+    db: AsyncSession,
+    *,
+    user: User,
+    conversation_id: UUID,
+    body_text: str | None,
+    reply_to_message_id: int | None,
+    attachments: list[StoredAttachmentInput],
+) -> ConversationMessageResponse:
+    return await _create_message_record(
+        db,
+        user=user,
+        conversation_id=conversation_id,
+        body_text=body_text,
+        reply_to_message_id=reply_to_message_id,
+        attachments=attachments,
     )
 
 
@@ -467,8 +603,15 @@ async def get_message(
             detail="Message not found.",
         )
 
+    attachments_by_message_id = await _load_attachments_for_message_ids(
+        db,
+        message_ids=[message_id],
+    )
     return _apply_direct_message_read_only_state(
-        _project_message(row),
+        _project_message(
+            row,
+            attachments_by_message_id=attachments_by_message_id,
+        ),
         access_context=access_context,
     )
 

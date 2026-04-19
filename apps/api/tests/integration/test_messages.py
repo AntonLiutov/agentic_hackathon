@@ -1,3 +1,5 @@
+from pathlib import Path
+
 from fastapi.testclient import TestClient
 
 
@@ -228,6 +230,176 @@ def test_direct_message_lifecycle_respects_author_permissions(auth_client: TestC
     own_delete_response = auth_client.delete(f"/api/messages/{own_message_response.json()['id']}")
     assert own_delete_response.status_code == 200
     assert own_delete_response.json()["is_deleted"] is True
+
+
+def test_room_message_supports_attachment_upload_and_download(
+    auth_client: TestClient,
+    tmp_path: Path,
+) -> None:
+    original_attachments_dir = auth_client.app.state.settings.attachments_dir
+    auth_client.app.state.settings.attachments_dir = str(tmp_path / "attachments")
+
+    try:
+        _register_user(
+            auth_client,
+            email="attachment-owner@example.com",
+            username="attachment.owner",
+        )
+        room_response = auth_client.post(
+            "/api/rooms",
+            json={
+                "name": "attachment-room",
+                "description": "Room for attachment testing.",
+                "visibility": "public",
+            },
+        )
+        assert room_response.status_code == 201
+        room_id = room_response.json()["id"]
+
+        create_message_response = auth_client.post(
+            f"/api/conversations/{room_id}/messages/attachments",
+            data={
+                "body_text": "Sharing a preview image.",
+                "attachment_comment": "Sprint wireframe snapshot",
+            },
+            files={
+                "files": ("wireframe.png", b"\x89PNG\r\npreview-bytes", "image/png"),
+            },
+        )
+        assert create_message_response.status_code == 201
+        message_payload = create_message_response.json()
+        assert message_payload["body_text"] == "Sharing a preview image."
+        assert len(message_payload["attachments"]) == 1
+        attachment = message_payload["attachments"][0]
+        assert attachment["original_filename"] == "wireframe.png"
+        assert attachment["comment_text"] == "Sprint wireframe snapshot"
+        assert attachment["is_image"] is True
+
+        attachment_path = Path(auth_client.app.state.settings.attachments_dir)
+        stored_files = list(attachment_path.iterdir())
+        assert len(stored_files) == 1
+        assert stored_files[0].is_file()
+
+        download_response = auth_client.get(attachment["download_path"])
+        assert download_response.status_code == 200
+        assert download_response.headers["content-type"].startswith("image/png")
+        assert download_response.content == b"\x89PNG\r\npreview-bytes"
+
+        history_response = auth_client.get(f"/api/conversations/{room_id}/messages")
+        assert history_response.status_code == 200
+        history_payload = history_response.json()
+        assert (
+            history_payload["messages"][0]["attachments"][0]["original_filename"]
+            == "wireframe.png"
+        )
+    finally:
+        auth_client.app.state.settings.attachments_dir = original_attachments_dir
+
+
+def test_direct_message_supports_attachment_upload_and_download(
+    auth_client: TestClient,
+    tmp_path: Path,
+) -> None:
+    original_attachments_dir = auth_client.app.state.settings.attachments_dir
+    auth_client.app.state.settings.attachments_dir = str(tmp_path / "attachments")
+
+    try:
+        _register_user(
+            auth_client,
+            email="dm-attachment-alpha@example.com",
+            username="dm.attachment.alpha",
+        )
+        auth_client.post("/api/auth/logout")
+        _register_user(
+            auth_client,
+            email="dm-attachment-beta@example.com",
+            username="dm.attachment.beta",
+        )
+        auth_client.post("/api/auth/logout")
+
+        _create_friendship(
+            auth_client,
+            requester_email="dm-attachment-alpha@example.com",
+            recipient_email="dm-attachment-beta@example.com",
+            recipient_username="dm.attachment.beta",
+        )
+        auth_client.post("/api/auth/logout")
+        _login_user(auth_client, email="dm-attachment-alpha@example.com")
+
+        dm_response = auth_client.post(
+            "/api/dms",
+            json={"username": "dm.attachment.beta"},
+        )
+        assert dm_response.status_code == 201
+        dm_id = dm_response.json()["id"]
+
+        create_message_response = auth_client.post(
+            f"/api/conversations/{dm_id}/messages/attachments",
+            data={
+                "body_text": "Sharing a DM attachment.",
+                "attachment_comment": "Private handoff document",
+            },
+            files={
+                "files": ("handoff.pdf", b"%PDF-1.4 dm-preview-bytes", "application/pdf"),
+            },
+        )
+        assert create_message_response.status_code == 201
+        message_payload = create_message_response.json()
+        assert message_payload["body_text"] == "Sharing a DM attachment."
+        assert len(message_payload["attachments"]) == 1
+        attachment = message_payload["attachments"][0]
+        assert attachment["original_filename"] == "handoff.pdf"
+        assert attachment["comment_text"] == "Private handoff document"
+        assert attachment["is_image"] is False
+
+        attachment_path = Path(auth_client.app.state.settings.attachments_dir)
+        stored_files = list(attachment_path.iterdir())
+        assert len(stored_files) == 1
+        assert stored_files[0].is_file()
+
+        download_response = auth_client.get(attachment["download_path"])
+        assert download_response.status_code == 200
+        assert download_response.headers["content-type"].startswith("application/pdf")
+        assert download_response.content == b"%PDF-1.4 dm-preview-bytes"
+
+        history_response = auth_client.get(f"/api/conversations/{dm_id}/messages")
+        assert history_response.status_code == 200
+        history_payload = history_response.json()
+        assert (
+            history_payload["messages"][0]["attachments"][0]["original_filename"]
+            == "handoff.pdf"
+        )
+    finally:
+        auth_client.app.state.settings.attachments_dir = original_attachments_dir
+
+
+def test_attachment_limits_are_enforced(auth_client: TestClient, tmp_path: Path) -> None:
+    original_attachments_dir = auth_client.app.state.settings.attachments_dir
+    auth_client.app.state.settings.attachments_dir = str(tmp_path / "attachments")
+
+    try:
+        _register_user(auth_client, email="limit-owner@example.com", username="limit.owner")
+        room_response = auth_client.post(
+            "/api/rooms",
+            json={
+                "name": "attachment-limit-room",
+                "description": "Room for attachment size validation.",
+                "visibility": "public",
+            },
+        )
+        assert room_response.status_code == 201
+        room_id = room_response.json()["id"]
+
+        oversized_image = auth_client.post(
+            f"/api/conversations/{room_id}/messages/attachments",
+            files={
+                "files": ("oversized.png", b"0" * (3 * 1024 * 1024 + 1), "image/png"),
+            },
+        )
+        assert oversized_image.status_code == 413
+        assert oversized_image.json()["detail"] == "Images must be 3 MB or smaller."
+    finally:
+        auth_client.app.state.settings.attachments_dir = original_attachments_dir
 
 
 def test_message_history_supports_cursor_pagination(auth_client: TestClient) -> None:
