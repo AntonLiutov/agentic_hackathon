@@ -9,3 +9,4 @@ apps/api/**/*.egg-info/
 apps/api/**/__pycache__/
 apps/web/node_modules/
 apps/web/dist/
+storage/
