@@ -43,6 +43,7 @@ type RoomsContextValue = {
 };
 
 export const RoomsContext = createContext<RoomsContextValue | null>(null);
+const SELECTED_ROOM_STORAGE_KEY = "agentic_selected_room_id";
 
 function sortRooms(rooms: RoomSummary[]) {
   return [...rooms].sort((left, right) => left.name.localeCompare(right.name));
@@ -60,18 +61,32 @@ export function RoomsProvider({ children }: PropsWithChildren) {
   const [myRooms, setMyRooms] = useState<RoomSummary[]>([]);
   const [publicRooms, setPublicRooms] = useState<RoomSummary[]>([]);
   const [invitations, setInvitations] = useState<RoomInvitation[]>([]);
-  const [selectedRoomId, setSelectedRoomId] = useState<string | null>(null);
+  const [selectedRoomId, setSelectedRoomId] = useState<string | null>(() => {
+    if (typeof window === "undefined") {
+      return null;
+    }
+
+    return window.localStorage.getItem(SELECTED_ROOM_STORAGE_KEY);
+  });
   const [searchTerm, setSearchTerm] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [noticeMessage, setNoticeMessage] = useState<string | null>(null);
 
   async function loadRooms(currentSearch: string) {
-    if (status !== "authenticated") {
+    if (status === "bootstrapping") {
+      setIsLoading(true);
+      return;
+    }
+
+    if (status === "anonymous") {
       setMyRooms([]);
       setPublicRooms([]);
       setInvitations([]);
       setSelectedRoomId(null);
+      if (typeof window !== "undefined") {
+        window.localStorage.removeItem(SELECTED_ROOM_STORAGE_KEY);
+      }
       setErrorMessage(null);
       setNoticeMessage(null);
       setIsLoading(false);
@@ -125,6 +140,19 @@ export function RoomsProvider({ children }: PropsWithChildren) {
       isCancelled = true;
     };
   }, [status, searchTerm]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    if (selectedRoomId) {
+      window.localStorage.setItem(SELECTED_ROOM_STORAGE_KEY, selectedRoomId);
+      return;
+    }
+
+    window.localStorage.removeItem(SELECTED_ROOM_STORAGE_KEY);
+  }, [selectedRoomId]);
 
   const selectedRoom = useMemo(() => {
     const roomPool = [...myRooms, ...publicRooms];

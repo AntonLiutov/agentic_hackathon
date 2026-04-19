@@ -370,3 +370,121 @@ def test_room_membership_access_and_admin_removal_rules(auth_client: TestClient)
     )
     assert re_invite_response.status_code == 403
     assert re_invite_response.json()["detail"] == "This user cannot be invited to the room."
+
+
+def test_room_admin_management_and_owner_delete_rules(auth_client: TestClient) -> None:
+    _register_user(auth_client, email="owner-admin@example.com", username="owner.admin")
+    room_response = auth_client.post(
+        "/api/rooms",
+        json={
+            "name": "admin-control-room",
+            "description": "Room for administration workflows.",
+            "visibility": "private",
+        },
+    )
+    assert room_response.status_code == 201
+    room_id = room_response.json()["id"]
+
+    auth_client.post("/api/auth/logout")
+    _register_user(auth_client, email="admin-candidate@example.com", username="admin.candidate")
+    auth_client.post("/api/auth/logout")
+    _register_user(auth_client, email="member-target@example.com", username="member.target")
+    auth_client.post("/api/auth/logout")
+
+    _login_user(auth_client, email="owner-admin@example.com")
+    for username in ("admin.candidate", "member.target"):
+        invite_response = auth_client.post(
+            f"/api/rooms/{room_id}/invitations",
+            json={"username": username},
+        )
+        assert invite_response.status_code == 201
+
+    auth_client.post("/api/auth/logout")
+    _login_user(auth_client, email="admin-candidate@example.com")
+    invitation_response = auth_client.get("/api/rooms/invitations/mine")
+    admin_invitation_id = invitation_response.json()["invitations"][0]["id"]
+    accept_admin_invitation = auth_client.post(
+        f"/api/rooms/invitations/{admin_invitation_id}/accept"
+    )
+    assert accept_admin_invitation.status_code == 200
+
+    auth_client.post("/api/auth/logout")
+    _login_user(auth_client, email="member-target@example.com")
+    invitation_response = auth_client.get("/api/rooms/invitations/mine")
+    member_invitation_id = invitation_response.json()["invitations"][0]["id"]
+    accept_member_invitation = auth_client.post(
+        f"/api/rooms/invitations/{member_invitation_id}/accept"
+    )
+    assert accept_member_invitation.status_code == 200
+
+    auth_client.post("/api/auth/logout")
+    _login_user(auth_client, email="owner-admin@example.com")
+    members_response = auth_client.get(f"/api/rooms/{room_id}/members")
+    assert members_response.status_code == 200
+    members = members_response.json()["members"]
+    admin_candidate = next(
+        member for member in members if member["username"] == "admin.candidate"
+    )
+    member_target = next(member for member in members if member["username"] == "member.target")
+
+    promote_response = auth_client.post(f"/api/rooms/{room_id}/admins/{admin_candidate['id']}")
+    assert promote_response.status_code == 200
+    assert promote_response.json()["message"] == "Admin access granted."
+
+    invitations_response = auth_client.get(f"/api/rooms/{room_id}/invitations")
+    assert invitations_response.status_code == 200
+
+    owner_delete_admin_response = auth_client.delete(
+        f"/api/rooms/{room_id}/admins/{admin_candidate['id']}"
+    )
+    assert owner_delete_admin_response.status_code == 200
+    assert owner_delete_admin_response.json()["message"] == "Admin access removed."
+
+    promote_again_response = auth_client.post(
+        f"/api/rooms/{room_id}/admins/{admin_candidate['id']}"
+    )
+    assert promote_again_response.status_code == 200
+
+    auth_client.post("/api/auth/logout")
+    _login_user(auth_client, email="admin-candidate@example.com")
+
+    demote_owner_response = auth_client.delete(
+        f"/api/rooms/{room_id}/admins/{room_response.json()['owner_user_id']}"
+    )
+    assert demote_owner_response.status_code == 400
+    assert demote_owner_response.json()["detail"] == "The room owner always keeps admin access."
+
+    remove_admin_response = auth_client.delete(
+        f"/api/rooms/{room_id}/admins/{admin_candidate['id']}"
+    )
+    assert remove_admin_response.status_code == 400
+    assert (
+        remove_admin_response.json()["detail"]
+        == "Use the owner workflow to change your own admin status."
+    )
+
+    remove_member_response = auth_client.delete(
+        f"/api/rooms/{room_id}/members/{member_target['id']}"
+    )
+    assert remove_member_response.status_code == 200
+
+    bans_response = auth_client.get(f"/api/rooms/{room_id}/bans")
+    assert bans_response.status_code == 200
+    assert bans_response.json()["bans"][0]["username"] == "member.target"
+
+    unban_response = auth_client.delete(f"/api/rooms/{room_id}/bans/{member_target['id']}")
+    assert unban_response.status_code == 200
+    assert unban_response.json()["message"] == "User removed from the room ban list."
+
+    owner_delete_room_response = auth_client.delete(f"/api/rooms/{room_id}")
+    assert owner_delete_room_response.status_code == 403
+
+    auth_client.post("/api/auth/logout")
+    _login_user(auth_client, email="owner-admin@example.com")
+
+    delete_room_response = auth_client.delete(f"/api/rooms/{room_id}")
+    assert delete_room_response.status_code == 200
+    assert delete_room_response.json()["message"] == "Room deleted permanently."
+
+    deleted_room_response = auth_client.get(f"/api/rooms/{room_id}")
+    assert deleted_room_response.status_code == 404

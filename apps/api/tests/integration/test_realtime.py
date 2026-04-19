@@ -249,3 +249,24 @@ def test_inbox_websocket_streams_friendship_events(auth_client: TestClient) -> N
 
         friendship_event = websocket.receive_json()
         assert friendship_event["type"] == "friendships.updated"
+
+
+def test_inbox_websocket_streams_room_events(auth_client: TestClient) -> None:
+    _register_user(auth_client, email="rt-rooms@example.com", username="rt.rooms")
+
+    with auth_client.websocket_connect("/ws/inbox") as websocket:
+        subscribed_event = websocket.receive_json()
+        assert subscribed_event["type"] == "inbox.subscribed"
+
+        create_response = auth_client.post(
+            "/api/rooms",
+            json={
+                "name": "realtime-room-admin",
+                "description": "Room event test.",
+                "visibility": "private",
+            },
+        )
+        assert create_response.status_code == 201
+
+        room_event = websocket.receive_json()
+        assert room_event["type"] == "rooms.updated"

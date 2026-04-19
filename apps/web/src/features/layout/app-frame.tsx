@@ -168,11 +168,20 @@ function AppFrameLayout() {
     void refreshFriendships();
   }, [refreshDirectMessages, refreshFriendships]);
 
+  const handleRoomsChanged = useCallback(() => {
+    void refreshRooms().finally(() => {
+      window.setTimeout(() => {
+        window.dispatchEvent(new CustomEvent("agentic:rooms-updated"));
+      }, 0);
+    });
+  }, [refreshRooms]);
+
   useInboxRealtime({
     enabled: Boolean(user),
     onUnread: handleUnreadEvent,
     onPresence: handlePresenceEvent,
     onFriendshipsChanged: handleFriendshipsChanged,
+    onRoomsChanged: handleRoomsChanged,
     onConnected: handleInboxConnected,
   });
 

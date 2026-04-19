@@ -211,6 +211,30 @@ class RealtimeConnectionManager:
             for websocket in sockets:
                 await self.disconnect_inbox(user_id, websocket)
 
+    async def broadcast_room_event(self) -> None:
+        stale_sockets_by_user: dict[UUID, list[WebSocket]] = defaultdict(list)
+
+        async with self._lock:
+            connections_by_user = {
+                user_id: list(sockets)
+                for user_id, sockets in self._user_connections.items()
+            }
+
+        payload = {
+            "type": "rooms.updated",
+        }
+
+        for user_id, sockets in connections_by_user.items():
+            for websocket in sockets:
+                try:
+                    await websocket.send_json(payload)
+                except Exception:
+                    stale_sockets_by_user[user_id].append(websocket)
+
+        for user_id, sockets in stale_sockets_by_user.items():
+            for websocket in sockets:
+                await self.disconnect_inbox(user_id, websocket)
+
     async def close(self) -> None:
         async with self._lock:
             conversation_connections = {
