@@ -204,6 +204,51 @@ def test_private_rooms_stay_hidden_and_invitation_acceptance_works(
     ]
 
 
+def test_room_admin_can_update_room_settings(auth_client: TestClient) -> None:
+    _register_user(
+        auth_client,
+        email="owner-settings@example.com",
+        username="owner.settings",
+    )
+
+    room_response = auth_client.post(
+        "/api/rooms",
+        json={
+            "name": "engineering-room",
+            "description": "Original room description.",
+            "visibility": "public",
+        },
+    )
+    assert room_response.status_code == 201
+    room_id = room_response.json()["id"]
+
+    update_response = auth_client.patch(
+        f"/api/rooms/{room_id}",
+        json={
+            "name": "engineering-hub",
+            "description": "Updated room settings for the release crew.",
+            "visibility": "private",
+        },
+    )
+    assert update_response.status_code == 200
+    assert update_response.json()["name"] == "engineering-hub"
+    assert (
+        update_response.json()["description"]
+        == "Updated room settings for the release crew."
+    )
+    assert update_response.json()["visibility"] == "private"
+
+    my_rooms_response = auth_client.get("/api/rooms/mine")
+    assert my_rooms_response.status_code == 200
+    my_rooms = my_rooms_response.json()["rooms"]
+    assert [room["name"] for room in my_rooms] == ["engineering-hub"]
+    assert my_rooms[0]["visibility"] == "private"
+
+    public_catalog_response = auth_client.get("/api/rooms/public")
+    assert public_catalog_response.status_code == 200
+    assert public_catalog_response.json()["rooms"] == []
+
+
 def test_banned_user_cannot_rejoin_public_room(auth_client: TestClient) -> None:
     _register_user(
         auth_client,

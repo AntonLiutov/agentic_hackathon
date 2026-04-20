@@ -18,6 +18,7 @@ from app.api.schemas.rooms import (
     RoomManagementInvitationResponse,
     RoomMemberResponse,
     RoomSummaryResponse,
+    UpdateRoomRequest,
 )
 from app.attachments.service import (
     delete_attachment_files,
@@ -459,6 +460,32 @@ async def join_public_room(
 
     room_projection = await get_room_summary(db, user=user, room_id=room_id)
     return room_projection
+
+
+async def update_room(
+    db: AsyncSession,
+    *,
+    user: User,
+    room_id: UUID,
+    payload: UpdateRoomRequest,
+) -> RoomSummaryResponse:
+    access_context = await get_room_access_context(db, room_id=room_id, user=user)
+    require_room_admin(access_context)
+
+    access_context.room.name = _normalize_room_name(payload.name)
+    access_context.room.description = payload.description
+    access_context.room.visibility = payload.visibility
+
+    try:
+        await db.commit()
+    except IntegrityError as exc:
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Room name is already taken.",
+        ) from exc
+
+    return await get_room_summary(db, user=user, room_id=room_id)
 
 
 async def leave_room(

@@ -88,6 +88,12 @@ export type CreateRoomPayload = {
   visibility: RoomVisibility;
 };
 
+export type UpdateRoomPayload = {
+  name: string;
+  description?: string;
+  visibility: RoomVisibility;
+};
+
 export type CreateInvitationPayload = {
   username: string;
   message?: string;
@@ -102,6 +108,11 @@ export const roomsApi = {
   create: (payload: CreateRoomPayload) =>
     apiRequest<RoomSummary>("/api/rooms", {
       method: "POST",
+      body: JSON.stringify(payload),
+    }),
+  update: (roomId: string, payload: UpdateRoomPayload) =>
+    apiRequest<RoomSummary>(`/api/rooms/${roomId}`, {
+      method: "PATCH",
       body: JSON.stringify(payload),
     }),
   join: (roomId: string) =>

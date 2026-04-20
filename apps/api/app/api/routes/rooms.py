@@ -22,6 +22,7 @@ from app.api.schemas.rooms import (
     RoomManagementInvitationListResponse,
     RoomMemberListResponse,
     RoomSummaryResponse,
+    UpdateRoomRequest,
 )
 from app.auth.service import get_auth_context
 from app.core.config import Settings
@@ -46,6 +47,7 @@ from app.rooms.service import (
     remove_room_member,
     revoke_room_admin,
     unban_room_user,
+    update_room,
 )
 
 router = APIRouter(prefix="/api/rooms", tags=["rooms"])
@@ -148,6 +150,34 @@ async def get_room(
         required=True,
     )
     return await get_room_summary(db, user=auth_context.user, room_id=room_id)
+
+
+@router.patch(
+    "/{room_id}",
+    response_model=RoomSummaryResponse,
+    summary="Update room settings",
+    description=(
+        "Updates the room name, description, and visibility for members with room-management access."
+    ),
+)
+async def update_selected_room(
+    room_id: UUID,
+    request: Request,
+    payload: UpdateRoomRequest = Body(...),
+    db: AsyncSession = Depends(get_db_session),
+    realtime_manager: RealtimeConnectionManager = Depends(get_realtime_manager),
+    settings: Settings = Depends(get_settings_from_request),
+) -> RoomSummaryResponse:
+    auth_context = await get_auth_context(
+        db,
+        settings=settings,
+        session_token=request.cookies.get(settings.session_cookie_name),
+        touch_session=False,
+        required=True,
+    )
+    room = await update_room(db, user=auth_context.user, room_id=room_id, payload=payload)
+    await realtime_manager.broadcast_room_event()
+    return room
 
 
 @router.get(

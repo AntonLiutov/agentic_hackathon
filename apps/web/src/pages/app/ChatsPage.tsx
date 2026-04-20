@@ -28,12 +28,22 @@ import {
   type RoomBan,
   type RoomManagementInvitation,
   type RoomMember,
+  type RoomVisibility,
 } from "../../shared/api/rooms";
 
 type ManageRoomTab = "members" | "admins" | "bans" | "invitations" | "settings";
 
 function formatMessageTime(value: string) {
   return new Date(value).toLocaleTimeString([], {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+function formatDateTime(value: string) {
+  return new Date(value).toLocaleString([], {
+    month: "short",
+    day: "numeric",
     hour: "2-digit",
     minute: "2-digit",
   });
@@ -140,6 +150,11 @@ export function ChatsPage() {
   const [demotingAdminId, setDemotingAdminId] = useState<string | null>(null);
   const [unbanningUserId, setUnbanningUserId] = useState<string | null>(null);
   const [isDeletingRoom, setIsDeletingRoom] = useState(false);
+  const [isSavingRoomSettings, setIsSavingRoomSettings] = useState(false);
+  const [memberSearchTerm, setMemberSearchTerm] = useState("");
+  const [roomNameDraft, setRoomNameDraft] = useState("");
+  const [roomDescriptionDraft, setRoomDescriptionDraft] = useState("");
+  const [roomVisibilityDraft, setRoomVisibilityDraft] = useState<RoomVisibility>("public");
   const [pendingFiles, setPendingFiles] = useState<File[]>([]);
   const [attachmentComment, setAttachmentComment] = useState("");
   const [composerError, setComposerError] = useState<string | null>(null);
@@ -320,6 +335,21 @@ export function ChatsPage() {
     selectedRoom?.id,
     syncManagementInvitations,
   ]);
+
+  useEffect(() => {
+    if (!selectedRoom) {
+      setRoomNameDraft("");
+      setRoomDescriptionDraft("");
+      setRoomVisibilityDraft("public");
+      setMemberSearchTerm("");
+      return;
+    }
+
+    setRoomNameDraft(selectedRoom.name);
+    setRoomDescriptionDraft(selectedRoom.description ?? "");
+    setRoomVisibilityDraft(selectedRoom.visibility);
+    setMemberSearchTerm("");
+  }, [selectedRoom?.id]);
 
   useEffect(() => {
     async function handleRoomsUpdated() {
@@ -644,6 +674,32 @@ export function ChatsPage() {
     }
   }
 
+  async function handleSaveRoomSettings(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    if (!selectedRoom) {
+      return;
+    }
+
+    setPanelError(null);
+    setPanelNotice(null);
+    setIsSavingRoomSettings(true);
+
+    try {
+      const updatedRoom = await roomsApi.update(selectedRoom.id, {
+        name: roomNameDraft,
+        description: roomDescriptionDraft.trim() ? roomDescriptionDraft.trim() : undefined,
+        visibility: roomVisibilityDraft,
+      });
+      await refreshRooms();
+      setPanelNotice(`Room settings updated for #${updatedRoom.name}.`);
+    } catch (error) {
+      setPanelError(getApiErrorMessage(error, "Unable to save room settings right now."));
+    } finally {
+      setIsSavingRoomSettings(false);
+    }
+  }
+
   async function handlePromoteMember(member: RoomMember) {
     if (!selectedRoom) {
       return;
@@ -938,6 +994,9 @@ export function ChatsPage() {
   });
 
   const adminMembers = members.filter((member) => member.is_admin);
+  const filteredMembers = members.filter((member) =>
+    member.username.toLowerCase().includes(memberSearchTerm.trim().toLowerCase()),
+  );
   const canShowManageRoom = selectedRoom?.can_manage_members ?? false;
 
   if (!selectedRoom) {
@@ -1155,8 +1214,20 @@ export function ChatsPage() {
                     </div>
                     <span className="sidebar-muted">{members.length}</span>
                   </div>
-                  <ul className="room-people-list">
-                    {members.map((member) => (
+                  <label className="auth-form manage-room-search">
+                    <span>Search member</span>
+                    <input
+                      type="search"
+                      placeholder="Search member"
+                      value={memberSearchTerm}
+                      onChange={(event) => setMemberSearchTerm(event.target.value)}
+                    />
+                  </label>
+                  {filteredMembers.length === 0 ? (
+                    <p>No room members match that search.</p>
+                  ) : (
+                    <ul className="room-people-list">
+                      {filteredMembers.map((member) => (
                       <li key={member.id} className="room-people-item room-people-item--member">
                         <div className="room-person-summary">
                           <strong>{member.username}</strong>
@@ -1203,8 +1274,9 @@ export function ChatsPage() {
                           ) : null}
                         </div>
                       </li>
-                    ))}
-                  </ul>
+                      ))}
+                    </ul>
+                  )}
                 </div>
               ) : null}
 
@@ -1266,6 +1338,7 @@ export function ChatsPage() {
                             <small>
                               {ban.banned_by_username ? `By ${ban.banned_by_username}` : "Admin action"}
                             </small>
+                            <small>{formatDateTime(ban.banned_at)}</small>
                             <small>{ban.reason ?? "Removed by a room admin."}</small>
                           </div>
                           <div className="room-member-actions">
@@ -1358,24 +1431,55 @@ export function ChatsPage() {
                       <h3>Room ownership controls</h3>
                     </div>
                   </div>
-                  <dl className="session-meta">
-                    <div>
-                      <dt>Room name</dt>
-                      <dd>#{selectedRoom.name}</dd>
+                  <form className="auth-form" onSubmit={handleSaveRoomSettings}>
+                    <label>
+                      <span>Room name</span>
+                      <input
+                        type="text"
+                        minLength={3}
+                        maxLength={120}
+                        required
+                        value={roomNameDraft}
+                        onChange={(event) => setRoomNameDraft(event.target.value)}
+                      />
+                    </label>
+                    <label>
+                      <span>Description</span>
+                      <textarea
+                        rows={4}
+                        maxLength={500}
+                        placeholder="Describe what this room is for"
+                        value={roomDescriptionDraft}
+                        onChange={(event) => setRoomDescriptionDraft(event.target.value)}
+                      />
+                    </label>
+                    <fieldset className="visibility-fieldset">
+                      <legend>Visibility</legend>
+                      <label className="visibility-option">
+                        <input
+                          type="radio"
+                          name="room-visibility"
+                          checked={roomVisibilityDraft === "public"}
+                          onChange={() => setRoomVisibilityDraft("public")}
+                        />
+                        <span>Public</span>
+                      </label>
+                      <label className="visibility-option">
+                        <input
+                          type="radio"
+                          name="room-visibility"
+                          checked={roomVisibilityDraft === "private"}
+                          onChange={() => setRoomVisibilityDraft("private")}
+                        />
+                        <span>Private</span>
+                      </label>
+                    </fieldset>
+                    <div className="modal-settings-actions">
+                      <button className="primary-button" type="submit" disabled={isSavingRoomSettings}>
+                        {isSavingRoomSettings ? "Saving changes..." : "Save changes"}
+                      </button>
                     </div>
-                    <div>
-                      <dt>Visibility</dt>
-                      <dd>{selectedRoom.visibility}</dd>
-                    </div>
-                    <div>
-                      <dt>Description</dt>
-                      <dd>{selectedRoom.description ?? "No description"}</dd>
-                    </div>
-                    <div>
-                      <dt>Owner</dt>
-                      <dd>{selectedRoom.is_owner ? "You" : "Room owner"}</dd>
-                    </div>
-                  </dl>
+                  </form>
                   {selectedRoom.is_owner ? (
                     <div className="danger-zone">
                       <p>
