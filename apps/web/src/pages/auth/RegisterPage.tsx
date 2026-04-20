@@ -38,9 +38,8 @@ export function RegisterPage() {
 
   return (
     <AuthPageLayout
-      eyebrow="Onboarding"
       title="Create account"
-      description="Create your account and immediately start the first authenticated browser session."
+      description="Everything you need to keep work moving"
       footer={
         <p>
           Already have an account? <Link to="/signin">Sign in</Link>
@@ -63,7 +62,7 @@ export function RegisterPage() {
           <span>Username</span>
           <input
             type="text"
-            placeholder="classic-chat-user"
+            placeholder="your-name"
             value={username}
             onChange={(event) => setUsername(event.target.value)}
             autoComplete="username"

@@ -23,6 +23,7 @@ type RoomsContextValue = {
   invitations: RoomInvitation[];
   selectedRoomId: string | null;
   selectedRoom: RoomSummary | null;
+  hasExplicitSelection: boolean;
   searchTerm: string;
   isLoading: boolean;
   errorMessage: string | null;
@@ -68,6 +69,13 @@ export function RoomsProvider({ children }: PropsWithChildren) {
 
     return window.localStorage.getItem(SELECTED_ROOM_STORAGE_KEY);
   });
+  const [hasExplicitSelection, setHasExplicitSelection] = useState(() => {
+    if (typeof window === "undefined") {
+      return false;
+    }
+
+    return window.localStorage.getItem(SELECTED_ROOM_STORAGE_KEY) !== null;
+  });
   const [searchTerm, setSearchTerm] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -84,6 +92,7 @@ export function RoomsProvider({ children }: PropsWithChildren) {
       setPublicRooms([]);
       setInvitations([]);
       setSelectedRoomId(null);
+      setHasExplicitSelection(false);
       if (typeof window !== "undefined") {
         window.localStorage.removeItem(SELECTED_ROOM_STORAGE_KEY);
       }
@@ -111,9 +120,11 @@ export function RoomsProvider({ children }: PropsWithChildren) {
           currentSelection &&
           [...mineResponse.rooms, ...publicResponse.rooms].some((room) => room.id === currentSelection)
         ) {
+          setHasExplicitSelection(true);
           return currentSelection;
         }
 
+        setHasExplicitSelection(false);
         return mineResponse.rooms[0]?.id ?? publicResponse.rooms[0]?.id ?? null;
       });
     } catch (error) {
@@ -167,6 +178,7 @@ export function RoomsProvider({ children }: PropsWithChildren) {
 
   const selectRoom = useCallback((roomId: string | null) => {
     setSelectedRoomId(roomId);
+    setHasExplicitSelection(roomId !== null);
     setNoticeMessage(null);
     setErrorMessage(null);
   }, []);
@@ -247,6 +259,7 @@ export function RoomsProvider({ children }: PropsWithChildren) {
       invitations,
       selectedRoomId,
       selectedRoom,
+      hasExplicitSelection,
       searchTerm,
       isLoading,
       errorMessage,
@@ -269,6 +282,7 @@ export function RoomsProvider({ children }: PropsWithChildren) {
           });
         }
         setSelectedRoomId(room.id);
+        setHasExplicitSelection(true);
         setNoticeMessage(
           room.visibility === "private"
             ? "Private room created. Invite people from the room panel."
@@ -287,6 +301,7 @@ export function RoomsProvider({ children }: PropsWithChildren) {
           sortRooms(currentRooms.map((room) => (room.id === joinedRoom.id ? joinedRoom : room))),
         );
         setSelectedRoomId(joinedRoom.id);
+        setHasExplicitSelection(true);
         setNoticeMessage(`You joined #${joinedRoom.name}.`);
       },
       leaveRoom: async (roomId) => {
@@ -321,6 +336,7 @@ export function RoomsProvider({ children }: PropsWithChildren) {
           const remainingRooms = myRooms.filter((item) => item.id !== roomId);
           return remainingRooms[0]?.id ?? publicRooms[0]?.id ?? null;
         });
+        setHasExplicitSelection(false);
         setNoticeMessage(response.message);
       },
       inviteToRoom: async (roomId, payload) => {
@@ -341,6 +357,7 @@ export function RoomsProvider({ children }: PropsWithChildren) {
           return sortRooms([...nextRooms, room]);
         });
         setSelectedRoomId(room.id);
+        setHasExplicitSelection(true);
         setNoticeMessage(`Invitation accepted. You joined #${room.name}.`);
       },
       incrementUnread,
@@ -352,6 +369,7 @@ export function RoomsProvider({ children }: PropsWithChildren) {
       clearMessages,
       clearUnread,
       errorMessage,
+      hasExplicitSelection,
       incrementUnread,
       invitations,
       isLoading,

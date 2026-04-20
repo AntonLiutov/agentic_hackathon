@@ -82,9 +82,8 @@ export function ResetPasswordPage() {
 
   return (
     <AuthPageLayout
-      eyebrow="Recovery"
       title="Choose a new password"
-      description="Set a new password for your account. This will revoke all existing sessions for safety."
+      description="Set your new password"
       footer={
         <p>
           Need a fresh link? <Link to="/forgot-password">Request another reset link</Link>

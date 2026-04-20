@@ -29,12 +29,11 @@ export function ForgotPasswordPage() {
 
   return (
     <AuthPageLayout
-      eyebrow="Recovery"
       title="Reset password"
-      description="Enter your email address and we will send a password reset link if the account exists."
+      description="Enter your email to get a reset link"
       footer={
         <p>
-          Remembered it? <Link to="/signin">Back to sign in</Link>
+          Remembered it? <Link to="/signin">Sign in</Link>
         </p>
       }
     >

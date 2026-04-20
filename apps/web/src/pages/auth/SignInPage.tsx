@@ -71,12 +71,11 @@ export function SignInPage() {
 
   return (
     <AuthPageLayout
-      eyebrow="Access"
       title="Sign in"
-      description="Sign in with your email and password to bootstrap the current browser session."
+      description="Welcome back"
       footer={
         <p>
-          Need an account? <Link to="/register">Register</Link>
+          Need an account? <Link to="/register">Create account</Link>
         </p>
       }
     >

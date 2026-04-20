@@ -226,6 +226,12 @@ describe("Manage Room gap closure", () => {
 
     renderRoutes(["/app/chats"]);
 
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: /engineering-room/i })).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: /engineering-room/i }));
+
     let manageRoomButtons: HTMLElement[] = [];
     await waitFor(() => {
       manageRoomButtons = screen.getAllByRole("button", { name: "Manage room" });
