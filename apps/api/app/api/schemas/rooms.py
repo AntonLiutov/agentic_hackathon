@@ -63,6 +63,22 @@ class CreateRoomRequest(BaseModel):
     visibility: RoomVisibility
 
 
+class UpdateRoomRequest(BaseModel):
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "name": "engineering-room",
+                "description": "Room for product and engineering coordination.",
+                "visibility": "public",
+            }
+        }
+    )
+
+    name: RoomName
+    description: RoomDescription | None = None
+    visibility: RoomVisibility
+
+
 class RoomInvitationResponse(BaseModel):
     id: UUID
     room_conversation_id: UUID

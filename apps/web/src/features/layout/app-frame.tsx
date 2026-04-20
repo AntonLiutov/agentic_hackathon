@@ -107,6 +107,7 @@ function AppFrameLayout() {
     totalUnreadCount: totalDirectMessageUnreadCount,
   } = useDirectMessages();
   const visiblePublicRooms = publicRooms.filter((room) => !room.is_banned);
+  const privateRooms = myRooms.filter((room) => room.visibility === "private");
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [newRoomName, setNewRoomName] = useState("");
   const [newRoomDescription, setNewRoomDescription] = useState("");
@@ -337,7 +338,7 @@ function AppFrameLayout() {
 
           <section className="sidebar-section">
             <div className="sidebar-heading">
-              <h3>Your Rooms</h3>
+              <h3>Private Rooms</h3>
               <button
                 type="button"
                 onClick={() => {
@@ -391,11 +392,11 @@ function AppFrameLayout() {
               </form>
             ) : null}
 
-            {myRooms.length === 0 ? (
-              <p className="sidebar-empty">No rooms yet. Create one or join a public room.</p>
+            {privateRooms.length === 0 ? (
+              <p className="sidebar-empty">No private rooms yet.</p>
             ) : (
               <ul className="sidebar-room-list">
-                {myRooms.map((room) => (
+                {privateRooms.map((room) => (
                   <li key={room.id}>
                     <button
                       type="button"
@@ -404,8 +405,8 @@ function AppFrameLayout() {
                       }
                       onClick={() => navigateToRoom(room.id)}
                     >
-                      <span>#{room.name}</span>
-                      <small>{room.visibility} | {room.member_count}</small>
+                      <span>🔒 {room.name}</span>
+                      <small>{room.member_count} members</small>
                       {room.unread_count > 0 ? (
                         <span className="sidebar-badge">{room.unread_count}</span>
                       ) : null}
