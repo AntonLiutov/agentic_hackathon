@@ -71,12 +71,9 @@ export function ProfilePage() {
 
   return (
     <section className="placeholder-panel card profile-panel">
-      <p className="eyebrow">Profile</p>
-      <h1>Profile and password management</h1>
-      <p>
-        Review your immutable account details and rotate your password. For safety, changing the
-        password signs every browser session out and requires a fresh sign-in.
-      </p>
+      <p className="eyebrow">Account</p>
+      <h1>Profile</h1>
+      <p>Update your password and manage your account.</p>
 
       <div className="profile-grid">
         <article className="session-card">
@@ -142,13 +139,13 @@ export function ProfilePage() {
         </article>
 
         <article className="session-card">
-          <p className="session-card-kicker">Danger zone</p>
-          <h2>Delete account</h2>
-          <div className="danger-zone">
-            <p>
-              This permanently deletes your account, removes your memberships from other rooms,
-              deletes rooms you own, and permanently removes attachments from those deleted rooms.
-            </p>
+            <p className="session-card-kicker">Danger zone</p>
+            <h2>Delete account</h2>
+            <div className="danger-zone">
+              <p>
+                Deleting your account removes your memberships and permanently deletes rooms you
+                own.
+              </p>
             <form className="auth-form" onSubmit={handleDeleteAccount}>
               <label>
                 <span>Current password</span>

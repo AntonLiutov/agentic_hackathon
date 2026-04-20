@@ -1,6 +1,14 @@
 # Requirements Audit
 
-This file is a first-pass audit of the `.docx` / `requirements_extracted.txt` requirements against the current implementation after Sprint 3.
+This file is a current-state audit of the `.docx` requirements against the implementation on the
+main submission path as of `2026-04-20`.
+
+It is intentionally conservative:
+
+- `done` means the requirement is implemented and backed by current code plus validation evidence
+- `partial` means the core behavior exists, but there is still a mismatch, proof gap, or UI-polish gap
+- `missing` means not implemented
+- `stretch` means beyond the base submission scope
 
 Status legend:
 
@@ -15,7 +23,7 @@ Status legend:
 
 | Section | Requirement | Status | Evidence / Current state | Notes / Follow-up |
 |---|---|---|---|---|
-| 1 | Classic web-based chat app | `partial` | App is clearly a classic chat product with rooms, contacts, history, unread, presence | UI still needs final wireframe/polish pass in Sprint 4 |
+| 1 | Classic web-based chat app | `partial` | App is clearly a classic chat product with rooms, contacts, history, unread, presence | Final UI polish still has room to tighten the wireframe match |
 | 1 | User registration and authentication | `done` | Registration, login, logout, persistent sessions, password reset/change are implemented |  |
 | 1 | Public and private chat rooms | `done` | Public catalog, private invitations, room membership, room admin flows are implemented |  |
 | 1 | One-to-one personal messaging | `done` | DMs implemented with history, unread, realtime, freeze-on-block rules |  |
@@ -23,7 +31,7 @@ Status legend:
 | 1 | File and image sharing | `done` | Rooms and DMs support attachments, downloads, authorization |  |
 | 1 | Basic moderation and administration | `done` | Room management modal, admins, ban/unban semantics, delete room, message delete exist | Clarified: remove-member => ban is acceptable |
 | 1 | Persistent message history | `done` | Persisted messages, infinite scroll, replies, edits, deletes, unread, realtime recovery path exist |  |
-| 1 | Straightforward navigation, room/contact lists, history, notifications, presence | `partial` | Broadly true | Final Sprint 4 polish should align navigation and wireframe details more tightly |
+| 1 | Straightforward navigation, room/contact lists, history, notifications, presence | `partial` | Broadly true | A final UI pass can still align navigation and wireframe details more tightly |
 | 1 | Intended moderate scale / ~300 simultaneous users | `partial` | Architecture targets this, and a local `300`-concurrent history-fetch probe now completes successfully against the seeded stack | This is useful practical evidence, but it is still not a full multi-user end-to-end scale certification |
 
 ## 2.1 User Accounts and Authentication
@@ -88,7 +96,7 @@ Status legend:
 | 2.4.2 | Room has public/private visibility | `done` | Implemented |  |
 | 2.4.2 | Room has owner/admins/members/banned users | `done` | Implemented |  |
 | 2.4.2 | Room names are unique | `done` | Implemented |  |
-| 2.4.3 | Public catalog shows room name, description, member count | `done` | Implemented |  |
+| 2.4.3 | Public catalog shows room name, description, member count | `done` | Public room rows render room name, description, and member count in the shared sidebar catalog |  |
 | 2.4.3 | Public catalog supports search | `done` | Implemented |  |
 | 2.4.3 | Public rooms freely joinable unless banned | `done` | Implemented |  |
 | 2.4.4 | Private rooms hidden from public catalog | `done` | Implemented |  |
@@ -135,7 +143,7 @@ Status legend:
 | 2.5.2 | UTF-8 text support | `done` | Implemented by normal string handling and browser/backend stack |  |
 | 2.5.3 | Reply target visually outlined or quoted | `done` | Implemented |  |
 | 2.5.4 | Users can edit own messages | `done` | Implemented |  |
-| 2.5.4 | Gray “edited” indicator | `done` | Implemented |  |
+| 2.5.4 | Gray "edited" indicator | `done` | Implemented |  |
 | 2.5.5 | Message author can delete message | `done` | Implemented |  |
 | 2.5.5 | Room admins can delete room messages | `done` | Implemented |  |
 | 2.5.5 | Deleted messages need not be recoverable | `done` | Implemented as logical deleted-state UI without recovery feature |  |
@@ -163,7 +171,7 @@ Status legend:
 | Section | Requirement | Status | Evidence / Current state | Notes / Follow-up |
 |---|---|---|---|---|
 | 2.7.1 | Unread indicator near room/contact with unread messages | `done` | Implemented |  |
-| 2.7.1 | Unread cleared when corresponding chat opens | `done` | Implemented |  |
+| 2.7.1 | Unread cleared when corresponding chat opens | `done` | Implemented and re-verified in frontend route tests so unread clears on explicit room/DM open rather than passive page load |  |
 | 2.7.2 | Presence updates should appear with low latency | `done` | Implemented via websocket/inbox presence updates | Sprint 4 reliability should still stress race cases |
 
 ## 3. Non-Functional Requirements
@@ -176,7 +184,7 @@ Status legend:
 | 3.2 | Message delivery within 3 seconds | `done` | Local performance probe measured room delivery `p95 159.36ms` and DM delivery `p95 102.3ms` | Environment-specific, but comfortably below the requirement threshold |
 | 3.2 | Presence propagation below 2 seconds | `done` | Local performance probe measured presence propagation `p95 77.72ms` | Environment-specific, but comfortably below the requirement threshold |
 | 3.2 | Usable with very large history including at least 10,000 messages | `done` | Seeded `100,000` history messages and measured fetch probes on that room | Local large-history fetch probe remained responsive for both recent and older-page requests |
-| 3.3 | Messages stored persistently for years | `partial` | Persistent DB storage exists | “Years” not meaningfully provable in current project, but architecture aligns |
+| 3.3 | Messages stored persistently for years | `partial` | Persistent DB storage exists | “Years” is not meaningfully provable inside this project timeline, but the persistence model aligns with the requirement |
 | 3.3 | Infinite scroll for older history | `done` | Implemented |  |
 | 3.4 | Files stored on local filesystem | `done` | Implemented |  |
 | 3.4 | Max file size 20 MB | `done` | Implemented |  |
@@ -245,17 +253,22 @@ Status legend:
 | 7 | Public GitHub repository | `partial` | Repo exists and workflow assumes GitHub | Final submission check still needed |
 | 7 | Project buildable/runnable via `docker compose up` from root | `done` | Root `docker compose up --build` flow has been repeatedly verified, with seeded demo data and reviewer guidance now documented explicitly | Fresh-machine dependency download time can still vary, but the documented root flow is ready for reviewers |
 
-## First-Pass Conclusions
+## Current Conclusions
 
-Main likely remaining base-spec gaps:
+Base chat requirements are effectively implemented.
+
+The remaining items are mostly in three buckets:
+
+- UI polish and closer wireframe alignment
+- stronger proof for the largest non-functional scale targets
+- optional XMPP / federation stretch work
+
+Submission-critical status:
 
 | Gap | Current status | Recommended sprint handling |
 |---|---|---|
-| Emoji support in messages/composer | `done` | Implemented in Sprint 4 reliability/audit branch |
-| Explicit standalone room `Ban` action in admin UI | `done` | Clarified as optional because remove-member => ban is acceptable |
-| Wireframe alignment, especially side placement / accordion feel | `partial` | Handle in later UI polish branch |
-| Reliability proof for reconnect/stale-tab/unread/presence races | `done` | Broad automated validation completed in the Sprint 4 reliability/audit branch, including active-conversation reconnect recovery |
-| Stronger validation / test evidence | `done` | Validation checklist added in `docs/validation-checklist.md`, full-suite verification documented, and critical auth-flow coverage expanded in `SP4-03` |
-| Large-history / performance / demo-data proof | `done` | `SP4-04` now includes deterministic demo data, measured seed runs at `250`, `20,000`, and `100,000` history messages, and a local performance probe for history fetch, message delivery, and presence propagation | Broader whole-system scale targets such as `1000` room participants remain tracked separately under section `3.1` |
-| Submission-ready documentation / clean-clone proof | `done` | `SP4-05` adds explicit reviewer guidance in `docs/submission-guide.md` and aligns the README/doc set around the root Docker flow |
-| XMPP / federation | `missing` | Stretch only after core is solid |
+| Base functional requirements in sections `1` to `5` | `done` | Implemented and supported by current automated validation plus reviewer docs |
+| Wireframe alignment, especially accordion feel and final UI cleanup | `partial` | Non-blocking polish debt; does not represent a missing core chat capability |
+| Proof for highest scale targets such as `1000` room members | `partial` | Architecture and local probes are encouraging, but this is still lighter than a dedicated scale certification |
+| Reviewer-ready startup and validation docs | `done` | `README.md`, `docs/submission-guide.md`, `docs/validation-checklist.md`, and `docs/demo-data.md` now cover the reviewer path clearly |
+| XMPP / federation | `missing` | Advanced requirement / stretch only |

@@ -109,12 +109,9 @@ export function SessionsPage() {
 
   return (
     <section className="placeholder-panel card sessions-panel">
-      <p className="eyebrow">Sessions</p>
+      <p className="eyebrow">Security</p>
       <h1>Active sessions</h1>
-      <p>
-        Review the current browser session, inspect other active sessions, and revoke individual
-        sessions without signing out the browser you are using now.
-      </p>
+      <p>See where you are signed in and revoke old sessions when needed.</p>
 
       {errorMessage ? <p className="auth-error">{errorMessage}</p> : null}
       {noticeMessage ? <p className="auth-success">{noticeMessage}</p> : null}
@@ -151,7 +148,7 @@ export function SessionsPage() {
                 </div>
               </dl>
             ) : (
-              <p>We could not identify the current session metadata.</p>
+              <p>Current session details are unavailable right now.</p>
             )}
           </article>
 
@@ -164,7 +161,7 @@ export function SessionsPage() {
             {otherSessions.length === 0 ? (
               <div className="session-card">
                 <strong>No other active sessions</strong>
-                <p>This account is currently signed in only in the browser you are using now.</p>
+                <p>This account is only signed in on this browser.</p>
               </div>
             ) : (
               otherSessions.map((session) => (

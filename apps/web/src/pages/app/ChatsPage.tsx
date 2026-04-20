@@ -112,6 +112,7 @@ export function ChatsPage() {
   const { blockUser, getFriendshipState, isUserBlocked, sendFriendRequest } = useFriends();
   const {
     clearUnread,
+    hasExplicitSelection,
     inviteToRoom,
     joinRoom,
     leaveRoom,
@@ -123,7 +124,7 @@ export function ChatsPage() {
   const [members, setMembers] = useState<RoomMember[]>([]);
   const [bans, setBans] = useState<RoomBan[]>([]);
   const [messages, setMessages] = useState<ConversationMessage[]>([]);
-  const [sequenceHead, setSequenceHead] = useState(0);
+  const [, setSequenceHead] = useState(0);
   const [hasOlderMessages, setHasOlderMessages] = useState(false);
   const [nextBeforeSequence, setNextBeforeSequence] = useState<number | null>(null);
   const [composeText, setComposeText] = useState("");
@@ -417,8 +418,11 @@ export function ChatsPage() {
 
       try {
         await loadLatestMessages(activeRoomId);
-        await messagesApi.markRead(activeRoomId);
-        clearUnread(activeRoomId);
+
+        if (hasExplicitSelection) {
+          await messagesApi.markRead(activeRoomId);
+          clearUnread(activeRoomId);
+        }
 
         if (isCancelled) {
           return;
@@ -447,7 +451,7 @@ export function ChatsPage() {
     return () => {
       isCancelled = true;
     };
-  }, [clearUnread, loadLatestMessages, selectedRoom?.id, selectedRoom?.is_member]);
+  }, [clearUnread, hasExplicitSelection, loadLatestMessages, selectedRoom?.id, selectedRoom?.is_member]);
 
   async function loadOlderMessages() {
     if (!selectedRoom || !nextBeforeSequence || isLoadingOlderMessages) {
@@ -945,13 +949,18 @@ export function ChatsPage() {
         setSequenceHead((currentSequenceHead) =>
           Math.max(currentSequenceHead, liveSequenceHead ?? message.sequence_number),
         );
-        if (message.author_user_id && message.author_user_id !== user?.id && selectedRoom?.id) {
+        if (
+          hasExplicitSelection &&
+          message.author_user_id &&
+          message.author_user_id !== user?.id &&
+          selectedRoom?.id
+        ) {
           void messagesApi.markRead(selectedRoom.id).then(() => {
             clearUnread(selectedRoom.id);
           });
         }
       },
-      [clearUnread, loadLatestMessages, selectedRoom?.id, user?.id],
+      [clearUnread, hasExplicitSelection, loadLatestMessages, selectedRoom?.id, user?.id],
     ),
     onMessageUpdated: useCallback((message) => {
       setMessages((currentMessages) => {
@@ -1003,21 +1012,13 @@ export function ChatsPage() {
     return (
       <section className="chat-workspace card">
         <header className="chat-header">
-          <p className="eyebrow">Workspace</p>
           <h1>Choose a room</h1>
-          <p>
-            Create your first room, join a public room from the sidebar, or accept a private-room
-            invitation to begin the conversation flow.
-          </p>
+          <p>Open a room from the sidebar to start chatting.</p>
         </header>
 
         <div className="feature-list">
-          <li>Public rooms can be discovered, searched, and joined directly from the sidebar.</li>
-          <li>Private rooms stay hidden from the public catalog and grow through invitations.</li>
-          <li>
-            Once you have rooms, this panel becomes the message workspace for history, composer,
-            replies, and attachments.
-          </li>
+          <li>Create a room, join a public room, or accept an invitation.</li>
+          <li>Messages, replies, and files appear here once you open a conversation.</li>
         </div>
       </section>
     );
@@ -1028,21 +1029,15 @@ export function ChatsPage() {
       return (
         <section className="chat-workspace card">
           <header className="chat-header">
-            <p className="eyebrow">Workspace</p>
             <h1>Room access changed</h1>
-            <p>
-              This account no longer has access to the previously selected room. Choose another
-              room from the sidebar to continue.
-            </p>
+            <p>Choose another room from the sidebar to continue.</p>
           </header>
 
           {panelError ? <p className="auth-error">{panelError}</p> : null}
           {panelNotice ? <p className="auth-success">{panelNotice}</p> : null}
 
           <div className="feature-list">
-            <li>Removed or banned users no longer see the conversation workspace.</li>
-            <li>Public room discovery still works for rooms you can actually join.</li>
-            <li>Private room access remains invitation and membership driven.</li>
+            <li>You no longer have access to this room.</li>
           </div>
         </section>
       );
@@ -1052,12 +1047,8 @@ export function ChatsPage() {
       <section className="chat-workspace card">
         <header className="chat-header room-header">
           <div>
-            <p className="eyebrow">Room preview</p>
             <h1>#{selectedRoom.name}</h1>
-            <p>
-              {selectedRoom.description ??
-                "Join this room to unlock the conversation workspace, history, and future attachment access."}
-            </p>
+            {selectedRoom.description ? <p>{selectedRoom.description}</p> : null}
           </div>
 
           <div className="room-header-actions">
@@ -1072,12 +1063,11 @@ export function ChatsPage() {
         {panelNotice ? <p className="auth-success">{panelNotice}</p> : null}
 
         <article className="session-card">
-          <p className="session-card-kicker">Access</p>
           <h2>{selectedRoom.is_banned ? "Access revoked" : "Join required"}</h2>
           <p>
             {selectedRoom.is_banned
-              ? "This account no longer has access to the room. Membership now determines who can open the conversation workspace."
-              : "Membership now controls conversation visibility. Join the room before message history and attachments become available."}
+              ? "This account no longer has access to the room."
+              : "Join this room to send messages and share files."}
           </p>
           {selectedRoom.can_join ? (
             <button
@@ -1097,36 +1087,49 @@ export function ChatsPage() {
   }
 
   return (
-    <section className="chat-workspace card">
-      <header className="chat-header room-header">
-        <div>
-          <p className="eyebrow">Workspace</p>
+    <section className="chat-workspace card chat-workspace--conversation">
+      <header className="chat-header conversation-header conversation-header--room">
+        <div className="conversation-header-main">
           <h1>#{selectedRoom.name}</h1>
-          <p>
-            {selectedRoom.description ??
-              "Room conversation is now backed by real persisted messages, edits, deletes, and reply references."}
-          </p>
+          {selectedRoom.description ? (
+            <p className="conversation-description">{selectedRoom.description}</p>
+          ) : null}
+          <div className="conversation-meta-row">
+            <span
+              className="conversation-meta-chip"
+              title={selectedRoom.visibility === "private" ? "Private room" : "Public room"}
+            >
+              <span aria-hidden="true">{selectedRoom.visibility === "private" ? "🔒" : "🌐"}</span>
+              {selectedRoom.visibility === "private" ? "Private" : "Public"}
+            </span>
+            <span
+              className="conversation-meta-chip"
+              title={`${selectedRoom.member_count} member${selectedRoom.member_count === 1 ? "" : "s"}`}
+            >
+              <span aria-hidden="true">👥</span>
+              {selectedRoom.member_count}
+            </span>
+            <span
+              className="conversation-meta-chip"
+              title={realtime.status === "live" ? "Live updates" : "Sync status"}
+            >
+              <span
+                className={
+                  realtime.status === "live"
+                    ? "conversation-live-dot conversation-live-dot--live"
+                    : "conversation-live-dot conversation-live-dot--syncing"
+                }
+              />
+              {realtime.status === "live"
+                ? "Live"
+                : realtime.status === "reconnecting"
+                  ? "Syncing"
+                  : "Connecting"}
+            </span>
+          </div>
         </div>
 
-        <div className="room-header-actions">
-          <span className="status-pill status-pill--neutral">{selectedRoom.visibility}</span>
-          <span className="status-pill status-pill--neutral">
-            {selectedRoom.member_count} member{selectedRoom.member_count === 1 ? "" : "s"}
-          </span>
-          <span className="status-pill status-pill--neutral">sequence {sequenceHead}</span>
-          <span
-            className={
-              realtime.status === "live"
-                ? "status-pill status-pill--success"
-                : "status-pill status-pill--warning"
-            }
-          >
-            {realtime.status === "live"
-              ? "live updates"
-              : realtime.status === "reconnecting"
-                ? "reconnecting"
-                : "connecting"}
-          </span>
+        <div className="conversation-header-actions">
           {canShowManageRoom ? (
             <button
               className="ghost-button"
@@ -1210,7 +1213,7 @@ export function ChatsPage() {
                   <div className="modal-section-header">
                     <div>
                       <p className="session-card-kicker">Members</p>
-                      <h3>Room member actions</h3>
+                      <h3>Members</h3>
                     </div>
                     <span className="sidebar-muted">{members.length}</span>
                   </div>
@@ -1285,7 +1288,7 @@ export function ChatsPage() {
                   <div className="modal-section-header">
                     <div>
                       <p className="session-card-kicker">Admins</p>
-                      <h3>Current administrators</h3>
+                      <h3>Admins</h3>
                     </div>
                     <span className="sidebar-muted">{adminMembers.length}</span>
                   </div>
@@ -1323,7 +1326,7 @@ export function ChatsPage() {
                   <div className="modal-section-header">
                     <div>
                       <p className="session-card-kicker">Banned users</p>
-                      <h3>Room ban list</h3>
+                      <h3>Banned users</h3>
                     </div>
                     <span className="sidebar-muted">{bans.length}</span>
                   </div>
@@ -1365,7 +1368,7 @@ export function ChatsPage() {
                   <div className="modal-section-header">
                     <div>
                       <p className="session-card-kicker">Invitations</p>
-                      <h3>Private room invites</h3>
+                      <h3>Invitations</h3>
                     </div>
                     <span className="sidebar-muted">{managementInvitations.length}</span>
                   </div>
@@ -1428,7 +1431,7 @@ export function ChatsPage() {
                   <div className="modal-section-header">
                     <div>
                       <p className="session-card-kicker">Settings</p>
-                      <h3>Room ownership controls</h3>
+                      <h3>Settings</h3>
                     </div>
                   </div>
                   <form className="auth-form" onSubmit={handleSaveRoomSettings}>
@@ -1509,7 +1512,7 @@ export function ChatsPage() {
       ) : null}
 
       <div className="chat-room-layout">
-        <div className="chat-room-main">
+        <div className="chat-room-main chat-room-main--thread">
           {isLoadingMessages ? (
             <p>Loading messages...</p>
           ) : messages.length === 0 ? (
@@ -1533,7 +1536,7 @@ export function ChatsPage() {
                       void loadOlderMessages();
                     }}
                   >
-                    {isLoadingOlderMessages ? "Loading older messages..." : "Load older messages"}
+                    {isLoadingOlderMessages ? "Loading..." : "Older messages"}
                   </button>
                 </div>
               ) : null}
@@ -1550,7 +1553,6 @@ export function ChatsPage() {
                     <div className="message-meta">
                       <time>{formatMessageTime(message.created_at)}</time>
                       {message.is_edited ? <span className="message-flag">edited</span> : null}
-                      <span className="message-flag">#{message.sequence_number}</span>
                     </div>
                   </header>
                   <p className={message.is_deleted ? "message-body message-body--deleted" : "message-body"}>
@@ -1626,7 +1628,7 @@ export function ChatsPage() {
             </div>
           )}
 
-          <footer className="composer-shell">
+          <footer className="composer-shell composer-shell--compact">
             <form className="composer-form" onSubmit={handleSubmitMessage}>
               <input
                 ref={attachmentInputRef}
@@ -1635,25 +1637,29 @@ export function ChatsPage() {
                 hidden
                 onChange={handleAttachmentSelection}
               />
-              <div className="composer-toolbar">
+              <div className="composer-toolbar composer-toolbar--compact">
                 <button
+                  className="composer-icon-button"
                   type="button"
+                  aria-label="Emoji"
+                  title="Emoji"
                   onClick={() => setIsEmojiPickerOpen((currentValue) => !currentValue)}
                 >
-                  Emoji
+                  😊
                 </button>
                 <button
+                  className="composer-icon-button"
                   type="button"
+                  aria-label="Attach"
+                  title="Attach"
                   disabled={editingMessageId !== null}
                   onClick={() => attachmentInputRef.current?.click()}
                 >
-                  Attach
+                  📎
                 </button>
-                <span>
-                  {editingMessageId !== null
-                    ? "Editing an existing message."
-                    : "Room messages now persist with emoji, replies, edits, deletes, attachments, and continuity sequence numbers."}
-                </span>
+                {editingMessageId !== null ? (
+                  <span className="composer-toolbar-note">Editing message</span>
+                ) : null}
               </div>
               {isEmojiPickerOpen ? <EmojiPicker onSelect={handleInsertEmoji} /> : null}
               {composerError ? <p className="composer-feedback composer-feedback--error">{composerError}</p> : null}
@@ -1714,18 +1720,22 @@ export function ChatsPage() {
                 </div>
               ) : null}
               <textarea
-                rows={4}
+                rows={3}
                 maxLength={3072}
                 placeholder="Write a message"
                 value={composeText}
                 onChange={(event) => setComposeText(event.target.value)}
                 onPaste={handleComposerPaste}
               />
-              <div className="composer-actions">
+              <div className="composer-actions composer-actions--compact">
                 <button className="ghost-button" type="button" onClick={() => resetComposerState()}>
                   Clear
                 </button>
-                <button className="primary-button" type="submit" disabled={isSubmittingMessage}>
+                <button
+                  className="ghost-button composer-send-button"
+                  type="submit"
+                  disabled={isSubmittingMessage}
+                >
                   {isSubmittingMessage
                     ? editingMessageId !== null
                       ? "Saving..."
@@ -1741,8 +1751,8 @@ export function ChatsPage() {
 
         <aside className="room-context-rail">
           <article className="session-card">
-            <p className="session-card-kicker">Room details</p>
-            <h2>Context</h2>
+            <p className="session-card-kicker">Room</p>
+            <h2>Details</h2>
             <dl className="session-meta room-context-meta">
               <div>
                 <dt>Visibility</dt>

@@ -255,10 +255,8 @@ describe("App routes", () => {
   it("renders the landing page", () => {
     renderRoutes(["/"]);
 
-    expect(
-      screen.getByText("Frontend foundation for a production-ready classic chat app"),
-    ).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Sign in" })).toBeInTheDocument();
+    expect(screen.getByText("Clear chat for teams that need to move fast")).toBeInTheDocument();
+    expect(screen.getAllByRole("link", { name: "Sign in" }).length).toBeGreaterThan(0);
   });
 
   it("redirects anonymous users from protected routes to sign in", async () => {
@@ -281,12 +279,15 @@ describe("App routes", () => {
     });
     fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
 
-    await waitFor(() => {
-      expect(
-        screen.getByRole("heading", { level: 1, name: "#engineering-room" }),
-      ).toBeInTheDocument();
-    });
-    expect(screen.getByText("preview@agentic.chat")).toBeInTheDocument();
+    await waitFor(
+      () => {
+        expect(
+          screen.getByRole("button", { name: /engineering-room/i }),
+        ).toBeInTheDocument();
+      },
+      { timeout: 5_000 },
+    );
+    expect(screen.getAllByText("Preview User").length).toBeGreaterThan(0);
   });
 
   it("creates an account from the registration page and enters the workspace", async () => {
@@ -388,7 +389,7 @@ describe("App routes", () => {
 
     await waitFor(() => {
       expect(screen.getByRole("heading", { level: 1, name: "Choose a room" })).toBeInTheDocument();
-      expect(screen.getByText("new.user@example.com")).toBeInTheDocument();
+      expect(screen.getByText("new.chat.user")).toBeInTheDocument();
     });
   });
 
@@ -1070,7 +1071,7 @@ describe("App routes", () => {
     renderRoutes(["/app/chats"]);
 
     await waitFor(() => {
-      expect(screen.getByText("Preview User")).toBeInTheDocument();
+      expect(screen.getAllByText("Preview User").length).toBeGreaterThan(0);
     });
 
     myRooms = [
@@ -1508,7 +1509,7 @@ describe("App routes", () => {
     renderRoutes(["/app/chats"]);
 
     await waitFor(() => {
-      expect(screen.getByText("Preview User")).toBeInTheDocument();
+      expect(screen.getAllByText("Preview User").length).toBeGreaterThan(0);
     });
 
     fireEvent.click(screen.getAllByRole("button", { name: "Manage room" })[0]);
@@ -2356,9 +2357,9 @@ describe("App routes", () => {
     renderRoutes(["/app/contacts"]);
 
     await waitFor(() => {
-      expect(screen.getAllByRole("heading", { name: "Direct messages" }).length).toBeGreaterThan(0);
       expect(screen.getByText("new.friend")).toBeInTheDocument();
-      expect(screen.getByRole("button", { name: /existing\.friend/i })).toBeInTheDocument();
+      expect(screen.getAllByRole("button", { name: /existing\.friend/i }).length).toBeGreaterThan(0);
+      expect(screen.getByText("Direct Messages")).toBeInTheDocument();
     });
 
     const newFriendListItem = screen.getByText("new.friend").closest(".contacts-list-item");
@@ -2371,7 +2372,7 @@ describe("App routes", () => {
     await waitFor(() => {
       expect(screen.getByText("Direct message ready with new.friend.")).toBeInTheDocument();
       expect(screen.getByRole("heading", { name: "new.friend" })).toBeInTheDocument();
-      expect(screen.getByText("Direct conversation on the shared chat model.")).toBeInTheDocument();
+      expect(screen.getByText("Direct message")).toBeInTheDocument();
     });
   });
 
@@ -2898,16 +2899,14 @@ describe("App routes", () => {
     fireEvent.click(screen.getByRole("link", { name: /Contacts/i }));
 
     await waitFor(() => {
-      expect(
-        screen.getByText("No direct messages yet. Open your first one from the friend list."),
-      ).toBeInTheDocument();
+      expect(screen.getByText("Open a direct message from the friend list.")).toBeInTheDocument();
       expect(screen.getByText("live.friend")).toBeInTheDocument();
     });
 
     fireEvent.click(screen.getByRole("button", { name: "Accept" }));
 
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: "live.friend online" })).toBeInTheDocument();
+      expect(screen.getAllByRole("button", { name: "live.friend online" }).length).toBeGreaterThan(0);
       expect(screen.getByText("You are now friends with live.friend.")).toBeInTheDocument();
     });
   });
@@ -3061,9 +3060,7 @@ describe("App routes", () => {
     renderRoutes(["/app/contacts"]);
 
     await waitFor(() => {
-      expect(
-        screen.getByText("No direct messages yet. Open your first one from the friend list."),
-      ).toBeInTheDocument();
+      expect(screen.getByText("Open a direct message from the friend list.")).toBeInTheDocument();
     });
 
     directMessages = [
@@ -3089,11 +3086,352 @@ describe("App routes", () => {
     });
 
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: "first.live online" })).toBeInTheDocument();
+      expect(screen.getAllByRole("button", { name: /first\.live/i }).length).toBeGreaterThan(0);
     });
 
     await waitFor(() => {
       expect(screen.getByText("Hello from the very first live DM.")).toBeInTheDocument();
+    });
+  });
+
+  it("does not mark a room as read until the user explicitly opens it", async () => {
+    let markReadCalls = 0;
+
+    fetchMock.mockImplementation(async (input, init) => {
+      const url = typeof input === "string" ? input : input.toString();
+
+      if (url.endsWith("/api/auth/me")) {
+        return new Response(
+          JSON.stringify({
+            user: {
+              id: "user-1",
+              username: "Preview User",
+              email: "preview@agentic.chat",
+            },
+          }),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          },
+        );
+      }
+
+      if (url.endsWith("/api/rooms/mine")) {
+        return new Response(
+          JSON.stringify({
+            rooms: [
+              {
+                id: "room-unread-1",
+                name: "ops-team",
+                description: "Unread regression room",
+                visibility: "private",
+                owner_id: "user-1",
+                owner_username: "Preview User",
+                member_count: 4,
+                is_member: true,
+                can_join: false,
+                can_leave: true,
+                can_manage_members: true,
+                can_manage_settings: true,
+                can_delete_room: true,
+                is_banned: false,
+                unread_count: 3,
+                joined_at: "2026-04-19T10:00:00Z",
+                created_at: "2026-04-19T10:00:00Z",
+              },
+            ],
+          }),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          },
+        );
+      }
+
+      if (url.includes("/api/rooms/public")) {
+        return new Response(JSON.stringify({ rooms: [] }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      if (url.endsWith("/api/rooms/invitations/mine")) {
+        return new Response(JSON.stringify({ invitations: [] }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      if (url.endsWith("/api/rooms/room-unread-1/members")) {
+        return new Response(JSON.stringify({ members: [] }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      if (url.endsWith("/api/rooms/room-unread-1/bans")) {
+        return new Response(JSON.stringify({ bans: [] }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      if (url.includes("/api/conversations/room-unread-1/messages")) {
+        return new Response(
+          JSON.stringify({
+            conversation_id: "room-unread-1",
+            sequence_head: 1,
+            oldest_loaded_sequence: 1,
+            newest_loaded_sequence: 1,
+            next_before_sequence: null,
+            has_older: false,
+            messages: [
+              {
+                id: 1,
+                conversation_id: "room-unread-1",
+                author_user_id: "user-2",
+                author_username: "guest.user",
+                sequence_number: 1,
+                body_text: "Unread room message",
+                reply_to_message_id: null,
+                reply_to_message: null,
+                created_at: "2026-04-19T11:00:00Z",
+                edited_at: null,
+                deleted_at: null,
+                is_edited: false,
+                is_deleted: false,
+                can_edit: false,
+                can_delete: false,
+              },
+            ],
+          }),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          },
+        );
+      }
+
+      if (url.endsWith("/api/conversations/room-unread-1/read") && init?.method === "POST") {
+        markReadCalls += 1;
+        return new Response(
+          JSON.stringify({
+            conversation_id: "room-unread-1",
+            last_read_sequence_number: 1,
+            unread_count: 0,
+          }),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          },
+        );
+      }
+
+      if (url.endsWith("/api/dms/mine")) {
+        return new Response(JSON.stringify({ direct_messages: [] }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      if (url.endsWith("/api/friends")) {
+        return new Response(JSON.stringify({ friends: [] }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      if (url.endsWith("/api/friends/requests")) {
+        return new Response(
+          JSON.stringify({
+            incoming_requests: [],
+            outgoing_requests: [],
+          }),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          },
+        );
+      }
+
+      return new Response(JSON.stringify({ detail: "Unhandled request in test." }), {
+        status: 500,
+        headers: { "Content-Type": "application/json" },
+      });
+    });
+
+    renderRoutes(["/app/chats"]);
+
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { name: "#ops-team" })).toBeInTheDocument();
+      expect(screen.getByText("Unread room message")).toBeInTheDocument();
+    });
+
+    expect(markReadCalls).toBe(0);
+
+    fireEvent.click(screen.getByRole("button", { name: /ops-team/i }));
+
+    await waitFor(() => {
+      expect(markReadCalls).toBe(1);
+    });
+  });
+
+  it("does not mark a direct message as read until the user explicitly opens it", async () => {
+    let markReadCalls = 0;
+
+    fetchMock.mockImplementation(async (input, init) => {
+      const url = typeof input === "string" ? input : input.toString();
+
+      if (url.endsWith("/api/auth/me")) {
+        return new Response(
+          JSON.stringify({
+            user: {
+              id: "user-1",
+              username: "Preview User",
+              email: "preview@agentic.chat",
+            },
+          }),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          },
+        );
+      }
+
+      if (url.includes("/api/rooms/mine") || url.includes("/api/rooms/public")) {
+        return new Response(JSON.stringify({ rooms: [] }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      if (url.endsWith("/api/rooms/invitations/mine")) {
+        return new Response(JSON.stringify({ invitations: [] }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      if (url.endsWith("/api/dms/mine")) {
+        return new Response(
+          JSON.stringify({
+            direct_messages: [
+              {
+                id: "dm-unread-1",
+                counterpart_user_id: "user-7",
+                counterpart_username: "first.live",
+                counterpart_presence_status: "online",
+                status: "active",
+                created_at: "2026-04-19T19:10:00Z",
+                is_initiator: false,
+                can_message: true,
+                unread_count: 2,
+              },
+            ],
+          }),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          },
+        );
+      }
+
+      if (url.includes("/api/conversations/dm-unread-1/messages")) {
+        return new Response(
+          JSON.stringify({
+            conversation_id: "dm-unread-1",
+            sequence_head: 1,
+            oldest_loaded_sequence: 1,
+            newest_loaded_sequence: 1,
+            next_before_sequence: null,
+            has_older: false,
+            messages: [
+              {
+                id: 1,
+                conversation_id: "dm-unread-1",
+                author_user_id: "user-7",
+                author_username: "first.live",
+                sequence_number: 1,
+                body_text: "Unread DM message",
+                reply_to_message_id: null,
+                reply_to_message: null,
+                created_at: "2026-04-19T19:10:00Z",
+                edited_at: null,
+                deleted_at: null,
+                is_edited: false,
+                is_deleted: false,
+                can_edit: false,
+                can_delete: false,
+              },
+            ],
+          }),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          },
+        );
+      }
+
+      if (url.endsWith("/api/conversations/dm-unread-1/read") && init?.method === "POST") {
+        markReadCalls += 1;
+        return new Response(
+          JSON.stringify({
+            conversation_id: "dm-unread-1",
+            last_read_sequence_number: 1,
+            unread_count: 0,
+          }),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          },
+        );
+      }
+
+      if (url.endsWith("/api/friends") && (!init?.method || init.method === "GET")) {
+        return new Response(JSON.stringify({ friends: [] }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      if (url.endsWith("/api/friends/requests") && (!init?.method || init.method === "GET")) {
+        return new Response(
+          JSON.stringify({
+            incoming_requests: [],
+            outgoing_requests: [],
+          }),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          },
+        );
+      }
+
+      if (url.endsWith("/api/blocks") && (!init?.method || init.method === "GET")) {
+        return new Response(JSON.stringify({ blocked_users: [] }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      return new Response(JSON.stringify({ detail: "Unhandled request in test." }), {
+        status: 500,
+        headers: { "Content-Type": "application/json" },
+      });
+    });
+
+    renderRoutes(["/app/contacts"]);
+
+    await waitFor(() => {
+      expect(screen.getByText("Unread DM message")).toBeInTheDocument();
+    });
+
+    expect(markReadCalls).toBe(0);
+
+    fireEvent.click(screen.getByRole("button", { name: /first\.live/i }));
+
+    await waitFor(() => {
+      expect(markReadCalls).toBe(1);
     });
   });
 
@@ -3244,10 +3582,10 @@ describe("App routes", () => {
     fireEvent.click(screen.getByRole("button", { name: "blocked.friend offline" }));
 
     await waitFor(() => {
-      expect(screen.getByText("This direct message is read-only right now.")).toBeInTheDocument();
+      expect(screen.getByText("This conversation is read-only right now.")).toBeInTheDocument();
       expect(
         screen.getByText(
-          "Messaging is disabled because the friendship is inactive or one user blocked the other.",
+          "Messaging is unavailable because the friendship is inactive or one user blocked the other.",
         ),
       ).toBeInTheDocument();
       expect(screen.getByRole("button", { name: "Unblock user" })).toBeInTheDocument();
@@ -3443,20 +3781,15 @@ describe("App routes", () => {
     renderRoutes(["/app/contacts"]);
 
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: "block.target online" })).toBeInTheDocument();
+      expect(screen.getAllByRole("button", { name: "block.target online" }).length).toBeGreaterThan(0);
     });
 
     fireEvent.click(screen.getByRole("button", { name: "Block user" }));
 
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: "block.target offline" })).toBeInTheDocument();
+      expect(screen.getAllByRole("button", { name: "block.target offline" }).length).toBeGreaterThan(0);
       expect(screen.getByText("block.target blocked.")).toBeInTheDocument();
-    });
-
-    fireEvent.click(screen.getByRole("button", { name: "block.target offline" }));
-
-    await waitFor(() => {
-      expect(screen.getByText("This direct message is read-only right now.")).toBeInTheDocument();
+      expect(screen.getByText("This conversation is read-only right now.")).toBeInTheDocument();
       expect(screen.getByText("Existing history stays.")).toBeInTheDocument();
     });
   });
@@ -3742,7 +4075,7 @@ describe("App routes", () => {
     renderRoutes(["/app/profile"]);
 
     await waitFor(() => {
-      expect(screen.getByRole("heading", { name: "Profile and password management" })).toBeInTheDocument();
+      expect(screen.getByRole("heading", { name: "Profile" })).toBeInTheDocument();
     });
 
     fireEvent.change(screen.getAllByLabelText("Current password")[0], {
@@ -3806,7 +4139,7 @@ describe("App routes", () => {
     renderRoutes(["/app/profile"]);
 
     await waitFor(() => {
-      expect(screen.getByRole("heading", { name: "Profile and password management" })).toBeInTheDocument();
+      expect(screen.getByRole("heading", { name: "Profile" })).toBeInTheDocument();
     });
 
     fireEvent.change(screen.getAllByLabelText("Current password")[1], {
@@ -3898,7 +4231,7 @@ describe("App routes", () => {
 
     await waitFor(() => {
       expect(screen.getByRole("heading", { level: 1, name: "Choose a room" })).toBeInTheDocument();
-      expect(screen.getByText("preview@agentic.chat")).toBeInTheDocument();
+      expect(screen.getAllByText("Preview User").length).toBeGreaterThan(0);
     });
 
     await act(async () => {

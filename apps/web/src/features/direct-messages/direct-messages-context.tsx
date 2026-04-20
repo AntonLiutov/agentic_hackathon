@@ -19,6 +19,7 @@ type DirectMessagesContextValue = {
   directMessages: DirectMessage[];
   selectedDirectMessageId: string | null;
   selectedDirectMessage: DirectMessage | null;
+  hasExplicitSelection: boolean;
   isLoading: boolean;
   errorMessage: string | null;
   noticeMessage: string | null;
@@ -33,6 +34,7 @@ type DirectMessagesContextValue = {
 };
 
 export const DirectMessagesContext = createContext<DirectMessagesContextValue | null>(null);
+const SELECTED_DIRECT_MESSAGE_STORAGE_KEY = "agentic_selected_direct_message_id";
 
 function sortDirectMessages(directMessages: DirectMessage[]) {
   return [...directMessages].sort((left, right) =>
@@ -50,7 +52,20 @@ function normalizeDirectMessage(directMessage: DirectMessage): DirectMessage {
 export function DirectMessagesProvider({ children }: PropsWithChildren) {
   const { status } = useSession();
   const [directMessages, setDirectMessages] = useState<DirectMessage[]>([]);
-  const [selectedDirectMessageId, setSelectedDirectMessageId] = useState<string | null>(null);
+  const [selectedDirectMessageId, setSelectedDirectMessageId] = useState<string | null>(() => {
+    if (typeof window === "undefined") {
+      return null;
+    }
+
+    return window.localStorage.getItem(SELECTED_DIRECT_MESSAGE_STORAGE_KEY);
+  });
+  const [hasExplicitSelection, setHasExplicitSelection] = useState(() => {
+    if (typeof window === "undefined") {
+      return false;
+    }
+
+    return window.localStorage.getItem(SELECTED_DIRECT_MESSAGE_STORAGE_KEY) !== null;
+  });
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [noticeMessage, setNoticeMessage] = useState<string | null>(null);
@@ -59,6 +74,7 @@ export function DirectMessagesProvider({ children }: PropsWithChildren) {
     if (status !== "authenticated") {
       setDirectMessages([]);
       setSelectedDirectMessageId(null);
+      setHasExplicitSelection(false);
       setIsLoading(false);
       setErrorMessage(null);
       setNoticeMessage(null);
@@ -77,9 +93,11 @@ export function DirectMessagesProvider({ children }: PropsWithChildren) {
           currentSelection &&
           response.direct_messages.some((directMessage) => directMessage.id === currentSelection)
         ) {
+          setHasExplicitSelection(true);
           return currentSelection;
         }
 
+        setHasExplicitSelection(false);
         return response.direct_messages[0]?.id ?? null;
       });
     } catch (error) {
@@ -107,6 +125,22 @@ export function DirectMessagesProvider({ children }: PropsWithChildren) {
     };
   }, [status]);
 
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    if (selectedDirectMessageId) {
+      window.localStorage.setItem(
+        SELECTED_DIRECT_MESSAGE_STORAGE_KEY,
+        selectedDirectMessageId,
+      );
+      return;
+    }
+
+    window.localStorage.removeItem(SELECTED_DIRECT_MESSAGE_STORAGE_KEY);
+  }, [selectedDirectMessageId]);
+
   const selectedDirectMessage = useMemo(
     () =>
       directMessages.find((directMessage) => directMessage.id === selectedDirectMessageId) ?? null,
@@ -124,6 +158,7 @@ export function DirectMessagesProvider({ children }: PropsWithChildren) {
 
   const selectDirectMessage = useCallback((directMessageId: string | null) => {
     setSelectedDirectMessageId(directMessageId);
+    setHasExplicitSelection(directMessageId !== null);
     setErrorMessage(null);
     setNoticeMessage(null);
   }, []);
@@ -164,6 +199,7 @@ export function DirectMessagesProvider({ children }: PropsWithChildren) {
       directMessages,
       selectedDirectMessageId,
       selectedDirectMessage,
+      hasExplicitSelection,
       isLoading,
       errorMessage,
       noticeMessage,
@@ -183,6 +219,7 @@ export function DirectMessagesProvider({ children }: PropsWithChildren) {
           return sortDirectMessages([...nextDirectMessages, directMessage]);
         });
         setSelectedDirectMessageId(directMessage.id);
+        setHasExplicitSelection(true);
         setNoticeMessage(`Direct message ready with ${directMessage.counterpart_username}.`);
         return directMessage;
       },
@@ -204,6 +241,7 @@ export function DirectMessagesProvider({ children }: PropsWithChildren) {
       clearUnread,
       directMessages,
       errorMessage,
+      hasExplicitSelection,
       incrementUnread,
       isLoading,
       noticeMessage,

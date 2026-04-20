@@ -127,6 +127,7 @@ export function ContactsPage() {
     clearUnread,
     directMessages,
     errorMessage: directMessagesError,
+    hasExplicitSelection,
     isLoading,
     noticeMessage: directMessagesNotice,
     openDirectMessage,
@@ -139,7 +140,7 @@ export function ContactsPage() {
   const [friendRequestMessage, setFriendRequestMessage] = useState("");
   const [composeText, setComposeText] = useState("");
   const [messages, setMessages] = useState<ConversationMessage[]>([]);
-  const [sequenceHead, setSequenceHead] = useState(0);
+  const [, setSequenceHead] = useState(0);
   const [hasOlderMessages, setHasOlderMessages] = useState(false);
   const [nextBeforeSequence, setNextBeforeSequence] = useState<number | null>(null);
   const [replyTarget, setReplyTarget] = useState<ConversationMessage | null>(null);
@@ -254,8 +255,11 @@ export function ContactsPage() {
 
       try {
         await loadLatestMessages(selectedDirectMessageId);
-        await messagesApi.markRead(selectedDirectMessageId);
-        clearUnread(selectedDirectMessageId);
+
+        if (hasExplicitSelection) {
+          await messagesApi.markRead(selectedDirectMessageId);
+          clearUnread(selectedDirectMessageId);
+        }
 
         if (isCancelled) {
           return;
@@ -276,7 +280,16 @@ export function ContactsPage() {
     return () => {
       isCancelled = true;
     };
-  }, [clearDirectMessageMessages, clearUnread, loadLatestMessages, selectedDirectMessageId]);
+  }, [
+    clearDirectMessageMessages,
+    clearUnread,
+    hasExplicitSelection,
+    loadLatestMessages,
+    selectedDirectMessage?.can_message,
+    selectedDirectMessage?.counterpart_username,
+    selectedDirectMessage?.status,
+    selectedDirectMessageId,
+  ]);
 
   async function loadOlderMessages() {
     if (!selectedDirectMessageId || !nextBeforeSequence || isLoadingOlderMessages) {
@@ -651,13 +664,18 @@ export function ContactsPage() {
         setSequenceHead((currentSequenceHead) =>
           Math.max(currentSequenceHead, liveSequenceHead ?? message.sequence_number),
         );
-        if (message.author_user_id && message.author_user_id !== user?.id && selectedDirectMessageId) {
+        if (
+          hasExplicitSelection &&
+          message.author_user_id &&
+          message.author_user_id !== user?.id &&
+          selectedDirectMessageId
+        ) {
           void messagesApi.markRead(selectedDirectMessageId).then(() => {
             clearUnread(selectedDirectMessageId);
           });
         }
       },
-      [clearUnread, loadLatestMessages, selectedDirectMessageId, user?.id],
+      [clearUnread, hasExplicitSelection, loadLatestMessages, selectedDirectMessageId, user?.id],
     ),
     onMessageUpdated: useCallback((message) => {
       setMessages((currentMessages) => {
@@ -691,19 +709,7 @@ export function ContactsPage() {
     () => (
       <>
         <h3>Direct messages</h3>
-        <p>
-          One-to-one conversations are available only between confirmed friends and live on the
-          shared conversation model with persisted history, replies, edits, deletes, and
-          continuity sequence numbers.
-        </p>
-
-        <div className="context-block">
-          <strong>Direct message rule</strong>
-          <p>
-            To start a direct message, first become friends with the other user. Then use{" "}
-            <strong>Open DM</strong> from the friend list.
-          </p>
-        </div>
+        <p>Friends can chat one to one, with the same message and file features as rooms.</p>
 
         <div className="context-block">
           <strong>Send friend request</strong>
@@ -805,7 +811,7 @@ export function ContactsPage() {
                   <div>
                     <span>{friendRequest.requester_username}</span>
                     <small>
-                      {friendRequest.request_text ?? "No message"} •{" "}
+                      {friendRequest.request_text ?? "No message"} ·{" "}
                       {formatDateTime(friendRequest.created_at)}
                     </small>
                   </div>
@@ -860,7 +866,7 @@ export function ContactsPage() {
                   <div>
                     <span>{friendRequest.recipient_username}</span>
                     <small>
-                      {friendRequest.request_text ?? "Awaiting response"} •{" "}
+                      {friendRequest.request_text ?? "Awaiting response"} ·{" "}
                       {formatDateTime(friendRequest.created_at)}
                     </small>
                   </div>
@@ -882,7 +888,7 @@ export function ContactsPage() {
                   <div>
                     <span>{blockedUser.blocked_username}</span>
                     <small>
-                      {blockedUser.reason ?? "No reason"} • {formatDateTime(blockedUser.blocked_at)}
+                      {blockedUser.reason ?? "No reason"} · {formatDateTime(blockedUser.blocked_at)}
                     </small>
                   </div>
                   <button
@@ -928,35 +934,70 @@ export function ContactsPage() {
   }, [contactsPanelContent, setPanelContent]);
 
   return (
-    <section className="chat-workspace card">
+    <section className="chat-workspace card chat-workspace--conversation">
       {directMessagesError ? <p className="auth-error">{directMessagesError}</p> : null}
       {directMessagesNotice ? <p className="auth-success">{directMessagesNotice}</p> : null}
       {pageErrorMessage ? <p className="auth-error">{pageErrorMessage}</p> : null}
       {pageNoticeMessage ? <p className="auth-success">{pageNoticeMessage}</p> : null}
 
-      <div className="chat-room-layout chat-room-layout--narrow-rail">
-        <div className="chat-room-main">
+      <div className="chat-room-layout chat-room-layout--single">
+        <div className="chat-room-main chat-room-main--conversation">
           {selectedDirectMessage ? (
             <>
-              <header className="chat-header room-header">
-                <div>
-                  <p className="eyebrow">Conversation</p>
-                  <h2>{selectedDirectMessage.counterpart_username}</h2>
-                  <p>Direct conversation on the shared chat model.</p>
+              <header className="chat-header conversation-header">
+                <div className="conversation-header-main">
+                  <h1>{selectedDirectMessage.counterpart_username}</h1>
+                  <div className="conversation-meta-row">
+                    <span className="conversation-meta-chip" title="Direct message">
+                      <span aria-hidden="true">#</span>
+                      Direct message
+                    </span>
+                    <span
+                      className="conversation-meta-chip"
+                      title={formatPresenceLabel(
+                        getPresence(selectedDirectMessage.counterpart_user_id) ??
+                          selectedDirectMessage.counterpart_presence_status ??
+                          "offline",
+                      )}
+                    >
+                      <span
+                        className={`presence-dot presence-dot--${
+                          getPresence(selectedDirectMessage.counterpart_user_id) ??
+                          selectedDirectMessage.counterpart_presence_status ??
+                          "offline"
+                        }`}
+                      />
+                      {formatPresenceLabel(
+                        getPresence(selectedDirectMessage.counterpart_user_id) ??
+                          selectedDirectMessage.counterpart_presence_status ??
+                          "offline",
+                      )}
+                    </span>
+                    <span className="conversation-meta-chip" title={selectedDirectMessage.status}>
+                      <span aria-hidden="true">@</span>
+                      {selectedDirectMessage.status === "active" ? "Active" : selectedDirectMessage.status}
+                    </span>
+                    <span
+                      className="conversation-meta-chip"
+                      title={realtime.status === "live" ? "Live updates" : "Sync status"}
+                    >
+                      <span
+                        className={
+                          realtime.status === "live"
+                            ? "conversation-live-dot conversation-live-dot--live"
+                            : "conversation-live-dot conversation-live-dot--syncing"
+                        }
+                      />
+                      {realtime.status === "live"
+                        ? "Live"
+                        : realtime.status === "reconnecting"
+                          ? "Syncing"
+                          : "Connecting"}
+                    </span>
+                  </div>
                 </div>
 
-                <div className="room-header-actions">
-                  <span className="status-pill status-pill--neutral">direct message</span>
-                  <span className="status-pill status-pill--neutral">
-                    {formatPresenceLabel(
-                      getPresence(selectedDirectMessage.counterpart_user_id) ??
-                        selectedDirectMessage.counterpart_presence_status ??
-                        "offline",
-                    )}
-                  </span>
-                  <span className="status-pill status-pill--neutral">
-                    {selectedDirectMessage.status}
-                  </span>
+                <div className="conversation-header-actions">
                   {isUserBlocked(selectedDirectMessage.counterpart_user_id) ? (
                     <button
                       className="ghost-button"
@@ -991,20 +1032,6 @@ export function ContactsPage() {
                         : "Block user"}
                     </button>
                   )}
-                  <span className="status-pill status-pill--neutral">sequence {sequenceHead}</span>
-                  <span
-                    className={
-                      realtime.status === "live"
-                        ? "status-pill status-pill--success"
-                        : "status-pill status-pill--warning"
-                    }
-                  >
-                    {realtime.status === "live"
-                      ? "live updates"
-                      : realtime.status === "reconnecting"
-                        ? "reconnecting"
-                        : "connecting"}
-                  </span>
                 </div>
               </header>
 
@@ -1013,23 +1040,23 @@ export function ContactsPage() {
               ) : messages.length === 0 ? (
                 <div className="feature-list">
                   {!selectedDirectMessage.can_message ? (
-                    <li>This direct message is read-only right now.</li>
+                    <li>This conversation is read-only right now.</li>
                   ) : null}
-                  <li>This direct message has no messages yet.</li>
+                  <li>No messages yet.</li>
                   <li>
                     {selectedDirectMessage.can_message
-                      ? "Send the first message, reply to it, or edit and delete your own messages."
-                      : "Messaging is disabled because the friendship is inactive or one user blocked the other."}
+                      ? "Send the first message to get the conversation started."
+                      : "Messaging is unavailable because the friendship is inactive or one user blocked the other."}
                   </li>
                 </div>
               ) : (
                 <>
                   {!selectedDirectMessage.can_message ? (
                     <div className="feature-list">
-                      <li>This direct message is read-only right now.</li>
+                      <li>This conversation is read-only right now.</li>
                       <li>
-                        Messaging is disabled because the friendship is inactive or one user blocked
-                        the other.
+                        Messaging is unavailable because the friendship is inactive or one user
+                        blocked the other.
                       </li>
                     </div>
                   ) : null}
@@ -1050,7 +1077,7 @@ export function ContactsPage() {
                         >
                           {isLoadingOlderMessages
                             ? "Loading older messages..."
-                            : "Load older messages"}
+                            : "Older messages"}
                         </button>
                       </div>
                     ) : null}
@@ -1067,7 +1094,6 @@ export function ContactsPage() {
                           <div className="message-meta">
                             <time>{formatMessageTime(message.created_at)}</time>
                             {message.is_edited ? <span className="message-flag">edited</span> : null}
-                            <span className="message-flag">#{message.sequence_number}</span>
                           </div>
                         </header>
                         <p
@@ -1148,7 +1174,7 @@ export function ContactsPage() {
                 </>
               )}
 
-              <footer className="composer-shell">
+              <footer className="composer-shell composer-shell--compact">
                 <form className="composer-form" onSubmit={handleSubmitMessage}>
                   <input
                     ref={attachmentInputRef}
@@ -1157,26 +1183,30 @@ export function ContactsPage() {
                     hidden
                     onChange={handleAttachmentSelection}
                   />
-                  <div className="composer-toolbar">
+                  <div className="composer-toolbar composer-toolbar--compact">
                     <button
+                      className="composer-icon-button"
                       type="button"
+                      aria-label="Emoji"
+                      title="Emoji"
                       disabled={!selectedDirectMessage.can_message}
                       onClick={() => setIsEmojiPickerOpen((currentValue) => !currentValue)}
                     >
-                      Emoji
+                      😊
                     </button>
                     <button
+                      className="composer-icon-button"
                       type="button"
+                      aria-label="Attach"
+                      title="Attach"
                       disabled={editingMessageId !== null || !selectedDirectMessage.can_message}
                       onClick={() => attachmentInputRef.current?.click()}
                     >
-                      Attach
+                      📎
                     </button>
-                    <span>
-                      {editingMessageId !== null
-                        ? "Editing an existing message."
-                        : "Direct messages now persist with emoji, replies, edits, deletes, attachments, and continuity sequence numbers."}
-                    </span>
+                    {editingMessageId !== null ? (
+                      <span className="composer-toolbar-note">Editing message</span>
+                    ) : null}
                   </div>
                   {isEmojiPickerOpen ? (
                     <EmojiPicker
@@ -1248,7 +1278,7 @@ export function ContactsPage() {
                     </div>
                   ) : null}
                   <textarea
-                    rows={4}
+                    rows={3}
                     maxLength={3072}
                     placeholder="Write a direct message"
                     disabled={!selectedDirectMessage.can_message}
@@ -1256,12 +1286,12 @@ export function ContactsPage() {
                     onChange={(event) => setComposeText(event.target.value)}
                     onPaste={handleComposerPaste}
                   />
-                  <div className="composer-actions">
+                  <div className="composer-actions composer-actions--compact">
                     <button className="ghost-button" type="button" onClick={() => resetComposerState()}>
                       Clear
                     </button>
                     <button
-                      className="primary-button"
+                      className="ghost-button composer-send-button"
                       type="submit"
                       disabled={isSubmittingMessage || !selectedDirectMessage.can_message}
                     >
@@ -1279,68 +1309,12 @@ export function ContactsPage() {
             </>
           ) : (
             <div className="feature-list">
-              <li>Open a direct message from the friend list once friendship is confirmed.</li>
-              <li>Existing one-to-one conversations stay listed and selectable here.</li>
-              <li>Blocked or non-friend users cannot be reached through personal messaging.</li>
+              <li>Open a direct message from the friend list.</li>
+              <li>Only friends can chat here.</li>
             </div>
           )}
         </div>
 
-        <aside className="room-context-rail room-context-rail--narrow">
-          <article className="session-card room-people-card room-people-card--bounded">
-            <div className="room-context-card-header">
-              <div>
-                <p className="session-card-kicker">Existing conversations</p>
-                <h2>Direct messages</h2>
-              </div>
-              <span className="sidebar-muted">{directMessages.length}</span>
-            </div>
-            {isLoading ? (
-              <p>Loading direct messages...</p>
-            ) : directMessages.length === 0 ? (
-              <p>No direct messages yet. Open your first one from the friend list.</p>
-            ) : (
-              <ul className="room-people-list room-people-list--scrollable">
-                {directMessages.map((directMessage) => (
-                  <li key={directMessage.id} className="room-people-item">
-                    <button
-                      className={
-                        selectedDirectMessageId === directMessage.id
-                          ? "sidebar-room-button is-active"
-                          : "sidebar-room-button"
-                      }
-                      type="button"
-                      onClick={() => {
-                        selectDirectMessage(directMessage.id);
-                        setPageErrorMessage(null);
-                        setPageNoticeMessage(null);
-                      }}
-                    >
-                      <span>{directMessage.counterpart_username}</span>
-                      <small className="presence-inline">
-                        <span
-                          className={`presence-dot presence-dot--${
-                            getPresence(directMessage.counterpart_user_id) ??
-                            directMessage.counterpart_presence_status ??
-                            "offline"
-                          }`}
-                        />
-                        {formatPresenceLabel(
-                          getPresence(directMessage.counterpart_user_id) ??
-                            directMessage.counterpart_presence_status ??
-                            "offline",
-                        )}
-                      </small>
-                      {directMessage.unread_count > 0 ? (
-                        <span className="sidebar-badge">{directMessage.unread_count}</span>
-                      ) : null}
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </article>
-        </aside>
       </div>
     </section>
   );

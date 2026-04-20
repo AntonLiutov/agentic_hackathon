@@ -22,9 +22,12 @@ const appNavItems = [
   { to: "/app/profile", label: "Profile" },
 ];
 
+function formatSidebarPresenceLabel(presenceStatus: PresenceStatus) {
+  return presenceStatus === "afk" ? "AFK" : presenceStatus;
+}
+
 function WorkspaceContextCard() {
   const location = useLocation();
-  const { invitations } = useRooms();
   const { panelContent } = useWorkspaceContextPanel();
 
   if (location.pathname.startsWith("/app/chats")) {
@@ -35,35 +38,7 @@ function WorkspaceContextCard() {
     return <aside className="workspace-context">{panelContent}</aside>;
   }
 
-  const heading = location.pathname.startsWith("/app/sessions")
-    ? "Session details"
-    : "Profile summary";
-
-  return (
-    <aside className="workspace-context">
-      <h3>{heading}</h3>
-      <p>
-        This panel is the reserved space for contacts, sessions, and profile controls as the
-        product grows.
-      </p>
-
-      <div className="context-block">
-        <strong>Pending invitations</strong>
-        {invitations.length === 0 ? (
-          <p>No private-room invitations waiting right now.</p>
-        ) : (
-          <ul>
-            {invitations.map((invitation) => (
-              <li key={invitation.id}>
-                <span>#{invitation.room_name}</span>
-                <small>{invitation.inviter_username ?? "Unknown inviter"}</small>
-              </li>
-            ))}
-          </ul>
-        )}
-      </div>
-    </aside>
-  );
+  return null;
 }
 
 export function AppFrame() {
@@ -78,7 +53,7 @@ function AppFrameLayout() {
   const navigate = useNavigate();
   const location = useLocation();
   const { clearSession, user, signOut } = useSession();
-  const { setPresence } = usePresence();
+  const { getPresence, setPresence } = usePresence();
   const { pendingIncomingCount, refreshFriendships } = useFriends();
   const {
     acceptInvitation,
@@ -103,6 +78,7 @@ function AppFrameLayout() {
     directMessages,
     incrementUnread: incrementDirectMessageUnread,
     refreshDirectMessages,
+    selectDirectMessage,
     selectedDirectMessageId,
     totalUnreadCount: totalDirectMessageUnreadCount,
   } = useDirectMessages();
@@ -260,16 +236,21 @@ function AppFrameLayout() {
     navigate("/app/chats");
   }
 
+  function navigateToDirectMessage(directMessageId: string) {
+    selectDirectMessage(directMessageId);
+    navigate("/app/contacts");
+  }
+
   return (
     <div className="workspace-page">
       <header className="topbar">
         <div className="brand-lockup">
           <div className="brand-mark">AC</div>
-          <div>
-            <strong>Agentic Chat</strong>
-            <p>Classic web chat foundation</p>
+            <div>
+              <strong>Agentic Chat</strong>
+              <p>Team chat for rooms, direct messages, and files</p>
+            </div>
           </div>
-        </div>
 
         <nav className="topbar-nav" aria-label="Primary">
           {appNavItems.map((item) => (
@@ -296,8 +277,7 @@ function AppFrameLayout() {
 
         <div className="topbar-actions">
           <div className="signed-in-user">
-            <span>{user?.name}</span>
-            <small>{user?.email}</small>
+            <span>{user?.name ?? user?.username}</span>
           </div>
           <button
             className="ghost-button"
@@ -320,7 +300,7 @@ function AppFrameLayout() {
       >
         <aside className="workspace-sidebar">
           <label className="sidebar-search">
-            <span>Search public rooms</span>
+            <span>Search rooms</span>
             <input
               type="search"
               placeholder="Search by room name or description"
@@ -420,12 +400,12 @@ function AppFrameLayout() {
           <section className="sidebar-section">
             <div className="sidebar-heading">
               <h3>Public Rooms</h3>
-              <small>{visiblePublicRooms.length} found</small>
+              <small>{visiblePublicRooms.length}</small>
             </div>
             {isLoading ? (
               <p className="sidebar-empty">Loading public rooms...</p>
             ) : visiblePublicRooms.length === 0 ? (
-              <p className="sidebar-empty">No public rooms match this search right now.</p>
+              <p className="sidebar-empty">No public rooms match this search.</p>
             ) : (
               <ul className="sidebar-room-list">
                 {visiblePublicRooms.map((room) => (
@@ -438,6 +418,9 @@ function AppFrameLayout() {
                       onClick={() => navigateToRoom(room.id)}
                     >
                       <span>#{room.name}</span>
+                      {room.description ? (
+                        <small className="sidebar-room-description">{room.description}</small>
+                      ) : null}
                       <small>{room.member_count} members</small>
                       {room.unread_count > 0 ? (
                         <span className="sidebar-badge">{room.unread_count}</span>
@@ -471,8 +454,56 @@ function AppFrameLayout() {
 
           <section className="sidebar-section">
             <div className="sidebar-heading">
+              <h3>Direct Messages</h3>
+              <small>{directMessages.length}</small>
+            </div>
+            {directMessages.length === 0 ? (
+              <p className="sidebar-empty">No direct messages yet.</p>
+            ) : (
+              <ul className="sidebar-room-list">
+                {directMessages.map((directMessage) => (
+                  <li key={directMessage.id}>
+                    <button
+                      type="button"
+                      className={
+                        selectedDirectMessageId === directMessage.id
+                          ? "sidebar-room-button is-active"
+                          : "sidebar-room-button"
+                      }
+                      onClick={() => navigateToDirectMessage(directMessage.id)}
+                    >
+                      <span>{directMessage.counterpart_username}</span>
+                      <small className="presence-inline">
+                        {(() => {
+                          const presenceStatus =
+                            getPresence(directMessage.counterpart_user_id) ??
+                            directMessage.counterpart_presence_status ??
+                            "offline";
+
+                          return (
+                            <>
+                              <span
+                                className={`presence-dot presence-dot--${presenceStatus}`}
+                              />
+                              {formatSidebarPresenceLabel(presenceStatus)}
+                            </>
+                          );
+                        })()}
+                      </small>
+                      {directMessage.unread_count > 0 ? (
+                        <span className="sidebar-badge">{directMessage.unread_count}</span>
+                      ) : null}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
+
+          <section className="sidebar-section">
+            <div className="sidebar-heading">
               <h3>Invitations</h3>
-              <small>{invitations.length} pending</small>
+              <small>{invitations.length}</small>
             </div>
             {invitations.length === 0 ? (
               <p className="sidebar-empty">No private-room invitations are waiting for you.</p>

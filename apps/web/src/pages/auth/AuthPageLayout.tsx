@@ -3,9 +3,9 @@ import type { PropsWithChildren, ReactNode } from "react";
 import { Link } from "react-router-dom";
 
 type AuthPageLayoutProps = PropsWithChildren<{
-  eyebrow: string;
+  eyebrow?: string;
   title: string;
-  description: string;
+  description?: string;
   footer?: ReactNode;
 }>;
 
@@ -21,11 +21,11 @@ export function AuthPageLayout({
       <section className="auth-card card">
         <div className="auth-header">
           <Link className="auth-backlink" to="/">
-            Back to landing
+            Agentic Chat
           </Link>
-          <p className="eyebrow">{eyebrow}</p>
+          {eyebrow ? <p className="eyebrow">{eyebrow}</p> : null}
           <h1>{title}</h1>
-          <p>{description}</p>
+          {description ? <p className="auth-description">{description}</p> : null}
         </div>
 
         <div className="auth-content">{children}</div>
