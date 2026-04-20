@@ -346,6 +346,11 @@ describe("Message lifecycle", () => {
       expect(screen.getByText("Initial room message")).toBeInTheDocument();
     }, { timeout: 5_000 });
 
+    expect(screen.getByTitle("Your role: Owner")).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Details" })).not.toBeInTheDocument();
+
+    expect(screen.getByText("Initial room message").closest("article")).toHaveClass("message-card--own");
+
     fireEvent.click(screen.getByRole("button", { name: "Reply" }));
 
     await waitFor(() => {
@@ -369,6 +374,10 @@ describe("Message lifecycle", () => {
       expect(screen.getByText("Reply from the room composer 🚀")).toBeInTheDocument();
       expect(screen.getAllByText("Replying to").length).toBeGreaterThan(0);
     });
+
+    expect(screen.getAllByText(/Reply from the room composer/)[0].closest("article")).toHaveClass(
+      "message-card--own",
+    );
 
     fireEvent.click(screen.getAllByRole("button", { name: "Edit" })[0]);
 
@@ -1446,6 +1455,24 @@ describe("Message lifecycle", () => {
         can_delete: false,
         attachments: [],
       },
+      {
+        id: 2,
+        conversation_id: "dm-roman",
+        author_user_id: "user-1",
+        author_username: "Preview User",
+        sequence_number: 2,
+        body_text: "My latest reply",
+        reply_to_message_id: null,
+        reply_to_message: null,
+        created_at: "2026-04-18T09:01:00Z",
+        edited_at: null,
+        deleted_at: null,
+        is_edited: false,
+        is_deleted: false,
+        can_edit: true,
+        can_delete: true,
+        attachments: [],
+      },
     ];
 
     fetchMock.mockImplementation(async (input, init) => {
@@ -1584,6 +1611,8 @@ describe("Message lifecycle", () => {
       expect(screen.getByRole("heading", { name: "Roman" })).toBeInTheDocument();
       expect(screen.getByText("hey")).toBeInTheDocument();
     });
+
+    expect(screen.getByText("My latest reply").closest("article")).toHaveClass("message-card--own");
 
     counterpartUsername = "Deleted user";
     directMessageStatus = "inactive";

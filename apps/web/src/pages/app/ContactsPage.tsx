@@ -1082,7 +1082,14 @@ export function ContactsPage() {
                       </div>
                     ) : null}
                     {messages.map((message) => (
-                      <article key={message.id} className="message-card">
+                      <article
+                        key={message.id}
+                        className={
+                          message.author_user_id === user?.id
+                            ? "message-card message-card--own"
+                            : "message-card"
+                        }
+                      >
                         {message.reply_to_message ? (
                           <div className="message-reply-reference">
                             <strong>Replying to</strong>
