@@ -735,9 +735,16 @@ h2 {
 }
 
 .message-card {
+  width: min(92%, 56rem);
   border-radius: 20px;
   background: rgba(255, 255, 255, 0.05);
   padding: 1rem;
+}
+
+.message-card--own {
+  margin-left: auto;
+  background: rgba(91, 109, 248, 0.14);
+  border: 1px solid rgba(91, 109, 248, 0.2);
 }
 
 .message-card header {

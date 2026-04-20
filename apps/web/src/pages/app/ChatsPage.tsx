@@ -77,6 +77,21 @@ function formatAttachmentSize(sizeBytes: number) {
   return `${(sizeBytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+function getRoomRoleLabel(room: {
+  is_owner?: boolean;
+  is_admin?: boolean;
+}) {
+  if (room.is_owner) {
+    return "Owner";
+  }
+
+  if (room.is_admin) {
+    return "Admin";
+  }
+
+  return "Member";
+}
+
 const MAX_IMAGE_BYTES = 3 * 1024 * 1024;
 const MAX_FILE_BYTES = 20 * 1024 * 1024;
 const MESSAGE_PAGE_SIZE = 30;
@@ -1109,6 +1124,10 @@ export function ChatsPage() {
               <span aria-hidden="true">👥</span>
               {selectedRoom.member_count}
             </span>
+            <span className="conversation-meta-chip" title={`Your role: ${getRoomRoleLabel(selectedRoom)}`}>
+              <span aria-hidden="true">★</span>
+              {getRoomRoleLabel(selectedRoom)}
+            </span>
             <span
               className="conversation-meta-chip"
               title={realtime.status === "live" ? "Live updates" : "Sync status"}
@@ -1541,7 +1560,14 @@ export function ChatsPage() {
                 </div>
               ) : null}
               {messages.map((message) => (
-                <article key={message.id} className="message-card">
+                <article
+                  key={message.id}
+                  className={
+                    message.author_user_id === user?.id
+                      ? "message-card message-card--own"
+                      : "message-card"
+                  }
+                >
                   {message.reply_to_message ? (
                     <div className="message-reply-reference">
                       <strong>Replying to</strong>
@@ -1750,41 +1776,6 @@ export function ChatsPage() {
         </div>
 
         <aside className="room-context-rail">
-          <article className="session-card">
-            <p className="session-card-kicker">Room</p>
-            <h2>Details</h2>
-            <dl className="session-meta room-context-meta">
-              <div>
-                <dt>Visibility</dt>
-                <dd>{selectedRoom.visibility}</dd>
-              </div>
-              <div>
-                <dt>Role</dt>
-                <dd>{selectedRoom.can_manage_members ? "Admin" : "Member"}</dd>
-              </div>
-              <div>
-                <dt>Members</dt>
-                <dd>{selectedRoom.member_count}</dd>
-              </div>
-              <div>
-                <dt>Access</dt>
-                <dd>{selectedRoom.is_owner ? "Owner" : "Joined"}</dd>
-              </div>
-            </dl>
-            {canShowManageRoom ? (
-              <button
-                className="ghost-button"
-                type="button"
-                onClick={() => {
-                  setManageRoomTab("members");
-                  setIsManageModalOpen(true);
-                }}
-              >
-                Manage room
-              </button>
-            ) : null}
-          </article>
-
           <article className="session-card room-people-card">
             <div className="room-context-card-header">
               <div>
