@@ -1179,8 +1179,14 @@ describe("App routes", () => {
     });
 
     await waitFor(() => {
-      expect(screen.getByText("new.live.member")).toBeInTheDocument();
       expect(screen.getAllByText("5").length).toBeGreaterThan(0);
+    });
+
+    fireEvent.click(screen.getAllByRole("button", { name: "Manage room" })[0]);
+
+    await waitFor(() => {
+      expect(screen.getByRole("dialog")).toBeInTheDocument();
+      expect(screen.getByText("new.live.member")).toBeInTheDocument();
     });
   });
 
@@ -1371,7 +1377,13 @@ describe("App routes", () => {
       expect(screen.getByText("Owner message that admins may moderate")).toBeInTheDocument();
     });
     expect(screen.queryByRole("button", { name: "Delete" })).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Manage room" })).not.toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: "Manage room" }).length).toBeGreaterThan(0);
+    fireEvent.click(screen.getAllByRole("button", { name: "Manage room" })[0]);
+    await waitFor(() => {
+      expect(screen.getByRole("dialog")).toBeInTheDocument();
+    });
+    expect(screen.queryByRole("tab", { name: "Banned users" })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Close" }));
 
     myRooms = [
       {
@@ -2227,12 +2239,13 @@ describe("App routes", () => {
     renderRoutes(["/app/chats"]);
 
     await waitFor(() => {
-      expect(screen.getByText("guest.user")).toBeInTheDocument();
+      expect(screen.getAllByRole("button", { name: "Manage room" }).length).toBeGreaterThan(0);
     });
 
     fireEvent.click(screen.getAllByRole("button", { name: "Manage room" })[0]);
     await waitFor(() => {
       expect(screen.getByRole("dialog")).toBeInTheDocument();
+      expect(screen.getByText("guest.user")).toBeInTheDocument();
     });
     fireEvent.click(screen.getByRole("button", { name: "Remove from room" }));
 
@@ -2240,6 +2253,11 @@ describe("App routes", () => {
       expect(
         screen.getByText("Member removed from the room and banned from rejoining."),
       ).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole("tab", { name: "Banned users" }));
+
+    await waitFor(() => {
       expect(screen.getByText("By Preview User")).toBeInTheDocument();
       expect(screen.getByText("Removed by a room admin.")).toBeInTheDocument();
     });
@@ -2993,7 +3011,7 @@ describe("App routes", () => {
     fireEvent.click(screen.getByRole("link", { name: /Contacts/i }));
 
     await waitFor(() => {
-      expect(screen.getByText("Open a direct message from the friend list.")).toBeInTheDocument();
+      expect(screen.getByText("Manage friends, requests, and blocked users.")).toBeInTheDocument();
       expect(screen.getByText("live.friend")).toBeInTheDocument();
     });
 
@@ -3164,7 +3182,7 @@ describe("App routes", () => {
     renderRoutes(["/app/contacts"]);
 
     await waitFor(() => {
-      expect(screen.getByText("Open a direct message from the friend list.")).toBeInTheDocument();
+      expect(screen.getByText("Manage friends, requests, and blocked users.")).toBeInTheDocument();
     });
 
     directMessages = [
@@ -3192,6 +3210,8 @@ describe("App routes", () => {
     await waitFor(() => {
       expect(screen.getAllByRole("button", { name: /first\.live/i }).length).toBeGreaterThan(0);
     });
+
+    fireEvent.click(screen.getAllByRole("button", { name: /first\.live/i })[0]);
 
     await waitFor(() => {
       expect(screen.getByText("Hello from the very first live DM.")).toBeInTheDocument();
@@ -3527,14 +3547,15 @@ describe("App routes", () => {
     renderRoutes(["/app/contacts"]);
 
     await waitFor(() => {
-      expect(screen.getByText("Unread DM message")).toBeInTheDocument();
+      expect(screen.getAllByRole("button", { name: /first\.live/i }).length).toBeGreaterThan(0);
     });
 
     expect(markReadCalls).toBe(0);
 
-    fireEvent.click(screen.getByRole("button", { name: /first\.live/i }));
+    fireEvent.click(screen.getAllByRole("button", { name: /first\.live/i })[0]);
 
     await waitFor(() => {
+      expect(screen.getByText("Unread DM message")).toBeInTheDocument();
       expect(markReadCalls).toBe(1);
     });
   });
@@ -3886,6 +3907,12 @@ describe("App routes", () => {
 
     await waitFor(() => {
       expect(screen.getAllByRole("button", { name: "block.target" }).length).toBeGreaterThan(0);
+    });
+
+    fireEvent.click(screen.getAllByRole("button", { name: "block.target" })[0]);
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Block user" })).toBeInTheDocument();
     });
 
     fireEvent.click(screen.getByRole("button", { name: "Block user" }));

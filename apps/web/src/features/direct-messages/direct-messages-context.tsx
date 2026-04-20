@@ -34,7 +34,6 @@ type DirectMessagesContextValue = {
 };
 
 export const DirectMessagesContext = createContext<DirectMessagesContextValue | null>(null);
-const SELECTED_DIRECT_MESSAGE_STORAGE_KEY = "agentic_selected_direct_message_id";
 
 function sortDirectMessages(directMessages: DirectMessage[]) {
   return [...directMessages].sort((left, right) =>
@@ -52,20 +51,8 @@ function normalizeDirectMessage(directMessage: DirectMessage): DirectMessage {
 export function DirectMessagesProvider({ children }: PropsWithChildren) {
   const { status } = useSession();
   const [directMessages, setDirectMessages] = useState<DirectMessage[]>([]);
-  const [selectedDirectMessageId, setSelectedDirectMessageId] = useState<string | null>(() => {
-    if (typeof window === "undefined") {
-      return null;
-    }
-
-    return window.localStorage.getItem(SELECTED_DIRECT_MESSAGE_STORAGE_KEY);
-  });
-  const [hasExplicitSelection, setHasExplicitSelection] = useState(() => {
-    if (typeof window === "undefined") {
-      return false;
-    }
-
-    return window.localStorage.getItem(SELECTED_DIRECT_MESSAGE_STORAGE_KEY) !== null;
-  });
+  const [selectedDirectMessageId, setSelectedDirectMessageId] = useState<string | null>(null);
+  const [hasExplicitSelection, setHasExplicitSelection] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [noticeMessage, setNoticeMessage] = useState<string | null>(null);
@@ -124,22 +111,6 @@ export function DirectMessagesProvider({ children }: PropsWithChildren) {
       isCancelled = true;
     };
   }, [status]);
-
-  useEffect(() => {
-    if (typeof window === "undefined") {
-      return;
-    }
-
-    if (selectedDirectMessageId) {
-      window.localStorage.setItem(
-        SELECTED_DIRECT_MESSAGE_STORAGE_KEY,
-        selectedDirectMessageId,
-      );
-      return;
-    }
-
-    window.localStorage.removeItem(SELECTED_DIRECT_MESSAGE_STORAGE_KEY);
-  }, [selectedDirectMessageId]);
 
   const selectedDirectMessage = useMemo(
     () =>
