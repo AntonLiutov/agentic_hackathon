@@ -227,10 +227,18 @@ describe("Manage Room gap closure", () => {
     renderRoutes(["/app/chats"]);
 
     await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Private Rooms" })).toBeInTheDocument();
+    });
+
+    await waitFor(() => {
       expect(screen.getByRole("button", { name: /engineering-room/i })).toBeInTheDocument();
     });
 
     fireEvent.click(screen.getByRole("button", { name: /engineering-room/i }));
+
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { level: 1, name: "#engineering-room" })).toBeInTheDocument();
+    });
 
     let manageRoomButtons: HTMLElement[] = [];
     await waitFor(() => {

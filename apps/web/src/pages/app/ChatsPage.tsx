@@ -655,7 +655,6 @@ export function ChatsPage() {
     try {
       await joinRoom(selectedRoom.id);
       setPanelNotice(`You joined #${selectedRoom.name}.`);
-      await refreshRooms();
     } catch (error) {
       setPanelError(getApiErrorMessage(error, "Unable to join that room right now."));
     } finally {
@@ -1151,14 +1150,16 @@ export function ChatsPage() {
         <div className="conversation-header-actions">
           {canShowManageRoom ? (
             <button
-              className="ghost-button"
+              className="ghost-button conversation-icon-button"
               type="button"
+              aria-label="Manage room"
+              title="Manage room"
               onClick={() => {
                 setManageRoomTab("members");
                 setIsManageModalOpen(true);
               }}
             >
-              Manage room
+              ⚙
             </button>
           ) : null}
           {selectedRoom.can_leave ? (
@@ -1250,52 +1251,53 @@ export function ChatsPage() {
                   ) : (
                     <ul className="room-people-list">
                       {filteredMembers.map((member) => (
-                      <li key={member.id} className="room-people-item room-people-item--member">
-                        <div className="room-person-summary">
-                          <strong>{member.username}</strong>
-                          <small className="presence-meta">
-                            <span>
-                              {member.is_owner ? "Owner" : member.is_admin ? "Admin" : "Member"}
-                            </span>
-                            <span className="presence-inline">
+                        <li key={member.id} className="room-people-item room-people-item--member">
+                          <div className="room-person-summary manage-room-person-summary">
+                            <strong
+                              className="room-person-line"
+                              title={`${member.username} (${formatPresenceLabel(
+                                getPresence(member.id) ?? member.presence_status ?? "offline",
+                              )}, ${member.is_owner ? "Owner" : member.is_admin ? "Admin" : "Member"})`}
+                            >
                               <span
                                 className={`presence-dot presence-dot--${
                                   getPresence(member.id) ?? member.presence_status ?? "offline"
                                 }`}
+                                aria-hidden="true"
                               />
-                              {formatPresenceLabel(
-                                getPresence(member.id) ?? member.presence_status ?? "offline",
-                              )}
-                            </span>
-                          </small>
-                        </div>
-                        <div className="room-member-actions">
-                          {!member.is_owner && !member.is_admin && selectedRoom.is_owner ? (
-                            <button
-                              className="ghost-button sidebar-action-button"
-                              type="button"
-                              disabled={promotingMemberId === member.id}
-                              onClick={() => {
-                                void handlePromoteMember(member);
-                              }}
-                            >
-                              {promotingMemberId === member.id ? "Saving..." : "Make admin"}
-                            </button>
-                          ) : null}
-                          {member.can_remove ? (
-                            <button
-                              className="ghost-button sidebar-action-button"
-                              type="button"
-                              disabled={removingMemberId === member.id}
-                              onClick={() => {
-                                void handleRemoveMember(member);
-                              }}
-                            >
-                              {removingMemberId === member.id ? "Removing..." : "Remove from room"}
-                            </button>
-                          ) : null}
-                        </div>
-                      </li>
+                              <span>{member.username}</span>
+                            </strong>
+                            <small>
+                              {member.is_owner ? "Owner" : member.is_admin ? "Admin" : "Member"}
+                            </small>
+                          </div>
+                          <div className="room-member-actions">
+                            {!member.is_owner && !member.is_admin && selectedRoom.is_owner ? (
+                              <button
+                                className="ghost-button sidebar-action-button"
+                                type="button"
+                                disabled={promotingMemberId === member.id}
+                                onClick={() => {
+                                  void handlePromoteMember(member);
+                                }}
+                              >
+                                {promotingMemberId === member.id ? "Saving..." : "Make admin"}
+                              </button>
+                            ) : null}
+                            {member.can_remove ? (
+                              <button
+                                className="ghost-button sidebar-action-button"
+                                type="button"
+                                disabled={removingMemberId === member.id}
+                                onClick={() => {
+                                  void handleRemoveMember(member);
+                                }}
+                              >
+                                {removingMemberId === member.id ? "Removing..." : "Remove from room"}
+                              </button>
+                            ) : null}
+                          </div>
+                        </li>
                       ))}
                     </ul>
                   )}
@@ -1314,7 +1316,7 @@ export function ChatsPage() {
                   <ul className="room-people-list">
                     {adminMembers.map((member) => (
                       <li key={member.id} className="room-people-item room-people-item--member">
-                        <div className="room-person-summary">
+                        <div className="room-person-summary manage-room-person-summary">
                           <strong>{member.username}</strong>
                           <small>{member.is_owner ? "Owner and permanent admin" : "Room admin"}</small>
                         </div>
@@ -1355,7 +1357,7 @@ export function ChatsPage() {
                     <ul className="room-people-list">
                       {bans.map((ban) => (
                         <li key={ban.id} className="room-people-item room-people-item--member">
-                          <div className="room-person-summary">
+                          <div className="room-person-summary manage-room-person-summary">
                             <strong>{ban.username}</strong>
                             <small>
                               {ban.banned_by_username ? `By ${ban.banned_by_username}` : "Admin action"}
@@ -1430,7 +1432,7 @@ export function ChatsPage() {
                     <ul className="room-people-list">
                       {managementInvitations.map((invitation) => (
                         <li key={invitation.id} className="room-people-item room-people-item--member">
-                          <div className="room-person-summary">
+                          <div className="room-person-summary manage-room-person-summary">
                             <strong>{invitation.invitee_username}</strong>
                             <small>{invitation.status}</small>
                             <small>{invitation.message ?? "No invitation note."}</small>
@@ -1791,22 +1793,20 @@ export function ChatsPage() {
                 {members.map((member) => (
                   <li key={member.id} className="room-people-item room-people-item--member">
                     <div className="room-person-summary">
-                      <strong>{member.username}</strong>
-                      <small className="presence-meta">
-                        <span>
-                          {member.is_owner ? "Owner" : member.is_admin ? "Admin" : "Member"}
-                        </span>
-                        <span className="presence-inline">
-                          <span
-                            className={`presence-dot presence-dot--${
-                              getPresence(member.id) ?? member.presence_status ?? "offline"
-                            }`}
-                          />
-                          {formatPresenceLabel(
-                            getPresence(member.id) ?? member.presence_status ?? "offline",
-                          )}
-                        </span>
-                      </small>
+                      <strong
+                        className="room-person-line"
+                        title={`${member.username} (${formatPresenceLabel(
+                          getPresence(member.id) ?? member.presence_status ?? "offline",
+                        )}, ${member.is_owner ? "Owner" : member.is_admin ? "Admin" : "Member"})`}
+                      >
+                        <span
+                          className={`presence-dot presence-dot--${
+                            getPresence(member.id) ?? member.presence_status ?? "offline"
+                          }`}
+                          aria-hidden="true"
+                        />
+                        <span>{member.username}</span>
+                      </strong>
                     </div>
                     <div className="room-member-actions">
                       {getFriendshipState(member.id) === "friend" ? (

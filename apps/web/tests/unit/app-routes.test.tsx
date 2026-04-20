@@ -290,6 +290,48 @@ describe("App routes", () => {
     expect(screen.getAllByText("Preview User").length).toBeGreaterThan(0);
   });
 
+  it("shows the sidebar sections in the cleaned order and collapses a section", async () => {
+    renderRoutes(["/signin"]);
+
+    fireEvent.change(screen.getByLabelText("Email"), {
+      target: { value: "preview@agentic.chat" },
+    });
+    fireEvent.change(screen.getByLabelText("Password"), {
+      target: { value: "correct-horse-battery-staple" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Public Rooms" })).toBeInTheDocument();
+    });
+
+    const publicRoomsButton = screen.getByRole("button", { name: "Public Rooms" });
+    const privateRoomsButton = screen.getByRole("button", { name: "Private Rooms" });
+    const directMessagesButton = screen.getByRole("button", { name: "Direct Messages" });
+    const invitationsButton = screen.getByRole("button", { name: "Invitations" });
+
+    expect(
+      publicRoomsButton.compareDocumentPosition(privateRoomsButton) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(
+      privateRoomsButton.compareDocumentPosition(directMessagesButton) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(
+      directMessagesButton.compareDocumentPosition(invitationsButton) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+
+    expect(screen.getByRole("button", { name: "#engineering-room" })).toBeInTheDocument();
+
+    fireEvent.click(publicRoomsButton);
+
+    await waitFor(() => {
+      expect(screen.queryByRole("button", { name: "#engineering-room" })).not.toBeInTheDocument();
+    });
+  });
+
   it("creates an account from the registration page and enters the workspace", async () => {
     fetchMock.mockImplementation(async (input, init) => {
       const url = typeof input === "string" ? input : input.toString();
@@ -572,6 +614,27 @@ describe("App routes", () => {
         );
       }
 
+      if (url.endsWith("/api/rooms/room-random/bans")) {
+        return new Response(JSON.stringify({ bans: [] }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      if (url.includes("/api/conversations/room-random/messages")) {
+        return new Response(JSON.stringify({ messages: [] }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
+      if (url.endsWith("/api/conversations/room-random/read") && init?.method === "POST") {
+        return new Response(JSON.stringify({ success: true }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+
       return new Response(JSON.stringify({ detail: "Unhandled request in test." }), {
         status: 500,
         headers: { "Content-Type": "application/json" },
@@ -585,7 +648,7 @@ describe("App routes", () => {
     });
   });
 
-  it("joins a public room from the sidebar", async () => {
+  it("opens a public room from the sidebar and joins from the room view", async () => {
     let myRooms = [
       {
         id: "room-engineering",
@@ -620,6 +683,7 @@ describe("App routes", () => {
         can_join: true,
         can_leave: false,
         can_manage_members: false,
+        unread_count: 0,
         joined_at: null,
       },
     ];
@@ -708,6 +772,7 @@ describe("App routes", () => {
           can_join: false,
           can_leave: true,
           can_manage_members: false,
+          unread_count: 1,
           joined_at: "2026-04-18T09:00:00Z",
         };
         myRooms = [...myRooms, joinedRoom];
@@ -764,11 +829,23 @@ describe("App routes", () => {
       ).toBeInTheDocument();
     });
 
-    fireEvent.click(screen.getByRole("button", { name: "Join" }));
+    fireEvent.click(screen.getByRole("button", { name: /#random/i }));
+
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { level: 1, name: "#random" })).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Join room" })).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Join room" }));
 
     await waitFor(() => {
       expect(screen.getByText("You joined #random.")).toBeInTheDocument();
       expect(screen.getByRole("heading", { level: 1, name: "#random" })).toBeInTheDocument();
+    });
+
+    await waitFor(() => {
+      const joinedRoomButton = screen.getByRole("button", { name: /#random/i });
+      expect(joinedRoomButton.querySelector(".sidebar-badge")).toBeNull();
     });
   });
 
@@ -2366,6 +2443,7 @@ describe("App routes", () => {
     expect(newFriendListItem).not.toBeNull();
 
     if (newFriendListItem) {
+      fireEvent.click(within(newFriendListItem).getByRole("button", { name: "new.friend" }));
       fireEvent.click(within(newFriendListItem).getByRole("button", { name: "Open DM" }));
     }
 
@@ -2548,7 +2626,17 @@ describe("App routes", () => {
       expect(screen.getByText("new.friend")).toBeInTheDocument();
     });
 
-    fireEvent.click(screen.getByRole("button", { name: "Accept" }));
+    const pendingFriendRequestListItem = screen
+      .getByText("pending.friend")
+      .closest(".contacts-list-item");
+    expect(pendingFriendRequestListItem).not.toBeNull();
+
+    if (pendingFriendRequestListItem) {
+      fireEvent.click(
+        within(pendingFriendRequestListItem).getByRole("button", { name: /pending\.friend/i }),
+      );
+      fireEvent.click(within(pendingFriendRequestListItem).getByRole("button", { name: "Accept" }));
+    }
 
     await waitFor(() => {
       expect(screen.getByText("You are now friends with pending.friend.")).toBeInTheDocument();
@@ -2561,6 +2649,7 @@ describe("App routes", () => {
     expect(existingFriendListItem).not.toBeNull();
 
     if (existingFriendListItem) {
+      fireEvent.click(within(existingFriendListItem).getByRole("button", { name: "existing.friend" }));
       fireEvent.click(within(existingFriendListItem).getByRole("button", { name: "Remove" }));
     }
 
@@ -2723,7 +2812,12 @@ describe("App routes", () => {
 
     await waitFor(() => {
       expect(screen.getByText("live.friend")).toBeInTheDocument();
-      expect(screen.getByRole("button", { name: "Accept" })).toBeInTheDocument();
+      const requestListItem = screen.getByText("live.friend").closest(".contacts-list-item");
+      expect(requestListItem).not.toBeNull();
+      if (requestListItem) {
+        fireEvent.click(within(requestListItem).getByRole("button", { name: /live\.friend/i }));
+        expect(within(requestListItem).getByRole("button", { name: "Accept" })).toBeInTheDocument();
+      }
     });
   });
 
@@ -2903,10 +2997,20 @@ describe("App routes", () => {
       expect(screen.getByText("live.friend")).toBeInTheDocument();
     });
 
-    fireEvent.click(screen.getByRole("button", { name: "Accept" }));
+    const liveFriendRequestListItem = screen
+      .getByText("live.friend")
+      .closest(".contacts-list-item");
+    expect(liveFriendRequestListItem).not.toBeNull();
+
+    if (liveFriendRequestListItem) {
+      fireEvent.click(
+        within(liveFriendRequestListItem).getByRole("button", { name: /live\.friend/i }),
+      );
+      fireEvent.click(within(liveFriendRequestListItem).getByRole("button", { name: "Accept" }));
+    }
 
     await waitFor(() => {
-      expect(screen.getAllByRole("button", { name: "live.friend online" }).length).toBeGreaterThan(0);
+      expect(screen.getAllByRole("button", { name: "live.friend" }).length).toBeGreaterThan(0);
       expect(screen.getByText("You are now friends with live.friend.")).toBeInTheDocument();
     });
   });
@@ -3576,10 +3680,10 @@ describe("App routes", () => {
     renderRoutes(["/app/contacts"]);
 
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: "blocked.friend offline" })).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "blocked.friend" })).toBeInTheDocument();
     });
 
-    fireEvent.click(screen.getByRole("button", { name: "blocked.friend offline" }));
+    fireEvent.click(screen.getByRole("button", { name: "blocked.friend" }));
 
     await waitFor(() => {
       expect(screen.getByText("This conversation is read-only right now.")).toBeInTheDocument();
@@ -3781,13 +3885,13 @@ describe("App routes", () => {
     renderRoutes(["/app/contacts"]);
 
     await waitFor(() => {
-      expect(screen.getAllByRole("button", { name: "block.target online" }).length).toBeGreaterThan(0);
+      expect(screen.getAllByRole("button", { name: "block.target" }).length).toBeGreaterThan(0);
     });
 
     fireEvent.click(screen.getByRole("button", { name: "Block user" }));
 
     await waitFor(() => {
-      expect(screen.getAllByRole("button", { name: "block.target offline" }).length).toBeGreaterThan(0);
+      expect(screen.getAllByRole("button", { name: "block.target" }).length).toBeGreaterThan(0);
       expect(screen.getByText("block.target blocked.")).toBeInTheDocument();
       expect(screen.getByText("This conversation is read-only right now.")).toBeInTheDocument();
       expect(screen.getByText("Existing history stays.")).toBeInTheDocument();

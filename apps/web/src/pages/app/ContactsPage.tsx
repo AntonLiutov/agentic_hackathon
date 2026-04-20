@@ -709,7 +709,6 @@ export function ContactsPage() {
     () => (
       <>
         <h3>Direct messages</h3>
-        <p>Friends can chat one to one, with the same message and file features as rooms.</p>
 
         <div className="context-block">
           <strong>Send friend request</strong>
@@ -749,20 +748,24 @@ export function ContactsPage() {
           ) : (
             <ul className="contacts-stack">
               {friends.map((friend) => (
-                <li key={friend.friendship_id} className="contacts-list-item">
-                  <div>
-                    <span>{friend.username}</span>
-                    <small className="presence-inline">
+                <li key={friend.friendship_id} className="contacts-list-item contacts-list-item--expandable">
+                  <button
+                    className="contacts-row-trigger"
+                    type="button"
+                    title={`${friend.username} (${formatPresenceLabel(
+                      getPresence(friend.user_id) ?? friend.presence_status ?? "offline",
+                    )})`}
+                  >
+                    <span className="contacts-row-label">
                       <span
                         className={`presence-dot presence-dot--${
                           getPresence(friend.user_id) ?? friend.presence_status ?? "offline"
                         }`}
+                        aria-hidden="true"
                       />
-                      {formatPresenceLabel(
-                        getPresence(friend.user_id) ?? friend.presence_status ?? "offline",
-                      )}
-                    </small>
-                  </div>
+                      <span>{friend.username}</span>
+                    </span>
+                  </button>
                   <div className="contacts-inline-actions">
                     <button
                       className="ghost-button sidebar-action-button"
@@ -807,14 +810,16 @@ export function ContactsPage() {
           ) : (
             <ul className="contacts-stack">
               {incomingRequests.map((friendRequest) => (
-                <li key={friendRequest.id} className="contacts-list-item">
-                  <div>
-                    <span>{friendRequest.requester_username}</span>
-                    <small>
+                <li key={friendRequest.id} className="contacts-list-item contacts-list-item--expandable">
+                  <button className="contacts-row-trigger" type="button">
+                    <span className="contacts-row-label">
+                      <span>{friendRequest.requester_username}</span>
+                    </span>
+                    <small className="contacts-row-meta">
                       {friendRequest.request_text ?? "No message"} ·{" "}
                       {formatDateTime(friendRequest.created_at)}
                     </small>
-                  </div>
+                  </button>
                   <div className="contacts-inline-actions">
                     <button
                       className="ghost-button sidebar-action-button"

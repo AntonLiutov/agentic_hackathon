@@ -82,31 +82,56 @@ export function LandingPage() {
             <div className="landing-preview-sidebar">
               <div className="landing-preview-section">
                 <strong>Public Rooms</strong>
-                <button type="button"># general</button>
+                <button type="button">
+                  <span className="landing-preview-label"># general</span>
+                </button>
                 <button className="is-active" type="button">
-                  # engineering
+                  <span className="landing-preview-label"># engineering</span>
                   <span className="sidebar-badge">3</span>
                 </button>
                 <button type="button">
-                  # launch
+                  <span className="landing-preview-label"># launch</span>
                   <span className="sidebar-badge">1</span>
                 </button>
               </div>
 
               <div className="landing-preview-section">
                 <strong>Private Rooms</strong>
-                <button type="button">🔒 core-team</button>
-                <button type="button">🔒 ops</button>
+                <button type="button">
+                  <span className="landing-preview-label">
+                    <span aria-hidden="true">🔒</span>
+                    <span># core-team</span>
+                  </span>
+                </button>
+                <button type="button">
+                  <span className="landing-preview-label">
+                    <span aria-hidden="true">🔒</span>
+                    <span># ops</span>
+                  </span>
+                </button>
               </div>
 
               <div className="landing-preview-section">
                 <strong>Direct Messages</strong>
-                <button type="button">Alice</button>
-                <button type="button">
-                  Bob
+                <button title="Alice (online)" type="button">
+                  <span className="landing-preview-label">
+                    <span className="presence-dot presence-dot--online" aria-hidden="true" />
+                    <span>Alice</span>
+                  </span>
+                </button>
+                <button title="Bob (AFK)" type="button">
+                  <span className="landing-preview-label">
+                    <span className="presence-dot presence-dot--afk" aria-hidden="true" />
+                    <span>Bob</span>
+                  </span>
                   <span className="sidebar-badge">2</span>
                 </button>
-                <button type="button">Carol</button>
+                <button title="Carol (offline)" type="button">
+                  <span className="landing-preview-label">
+                    <span className="presence-dot presence-dot--offline" aria-hidden="true" />
+                    <span>Carol</span>
+                  </span>
+                </button>
               </div>
 
               <button className="landing-preview-create ghost-button" type="button">
@@ -127,7 +152,9 @@ export function LandingPage() {
                 {previewMessages.map((message) => (
                   <article
                     key={`${message.author}-${message.time}`}
-                    className={message.own ? "landing-message landing-message--own" : "landing-message"}
+                    className={
+                      message.own ? "landing-message landing-message--own" : "landing-message"
+                    }
                   >
                     <header>
                       <strong>{message.author}</strong>

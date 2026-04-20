@@ -57,6 +57,13 @@ function normalizeRoom(room: RoomSummary): RoomSummary {
   };
 }
 
+function normalizeOpenedRoom(room: RoomSummary): RoomSummary {
+  return {
+    ...normalizeRoom(room),
+    unread_count: 0,
+  };
+}
+
 export function RoomsProvider({ children }: PropsWithChildren) {
   const { status } = useSession();
   const [myRooms, setMyRooms] = useState<RoomSummary[]>([]);
@@ -273,7 +280,7 @@ export function RoomsProvider({ children }: PropsWithChildren) {
       createRoom: async (payload) => {
         setErrorMessage(null);
         setNoticeMessage(null);
-        const room = normalizeRoom(await roomsApi.create(payload));
+        const room = normalizeOpenedRoom(await roomsApi.create(payload));
         setMyRooms((currentRooms) => sortRooms([...currentRooms, room]));
         if (room.visibility === "public") {
           setPublicRooms((currentRooms) => {
@@ -292,7 +299,7 @@ export function RoomsProvider({ children }: PropsWithChildren) {
       joinRoom: async (roomId) => {
         setErrorMessage(null);
         setNoticeMessage(null);
-        const joinedRoom = normalizeRoom(await roomsApi.join(roomId));
+        const joinedRoom = normalizeOpenedRoom(await roomsApi.join(roomId));
         setMyRooms((currentRooms) => {
           const nextRooms = currentRooms.filter((room) => room.id !== joinedRoom.id);
           return sortRooms([...nextRooms, joinedRoom]);
@@ -348,7 +355,7 @@ export function RoomsProvider({ children }: PropsWithChildren) {
       acceptInvitation: async (invitationId) => {
         setErrorMessage(null);
         setNoticeMessage(null);
-        const room = normalizeRoom(await roomsApi.acceptInvitation(invitationId));
+        const room = normalizeOpenedRoom(await roomsApi.acceptInvitation(invitationId));
         setInvitations((currentInvitations) =>
           currentInvitations.filter((invitation) => invitation.id !== invitationId),
         );
