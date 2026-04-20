@@ -10,10 +10,6 @@ import { useFriends } from "../friends/use-friends";
 import { usePresence } from "../presence/use-presence";
 import { useRooms } from "../rooms/use-rooms";
 import { useSession } from "../session/use-session";
-import {
-  WorkspaceContextPanelProvider,
-  useWorkspaceContextPanel,
-} from "./workspace-context-panel";
 
 type SidebarSectionKey = "public" | "private" | "directMessages" | "invitations";
 
@@ -21,27 +17,8 @@ function formatSidebarPresenceLabel(presenceStatus: PresenceStatus) {
   return presenceStatus === "afk" ? "AFK" : presenceStatus;
 }
 
-function WorkspaceContextCard() {
-  const location = useLocation();
-  const { panelContent } = useWorkspaceContextPanel();
-
-  if (location.pathname.startsWith("/app/chats")) {
-    return null;
-  }
-
-  if (location.pathname.startsWith("/app/contacts")) {
-    return <aside className="workspace-context">{panelContent}</aside>;
-  }
-
-  return null;
-}
-
 export function AppFrame() {
-  return (
-    <WorkspaceContextPanelProvider>
-      <AppFrameLayout />
-    </WorkspaceContextPanelProvider>
-  );
+  return <AppFrameLayout />;
 }
 
 function AppFrameLayout() {
@@ -254,11 +231,9 @@ function AppFrameLayout() {
 
   const isChatsRoute = location.pathname.startsWith("/app/chats");
   const isContactsRoute = location.pathname.startsWith("/app/contacts");
-  const workspaceGridClass = isChatsRoute
+  const workspaceGridClass = isChatsRoute || isContactsRoute
     ? "workspace-grid workspace-grid--chat"
-    : isContactsRoute
-      ? "workspace-grid"
-      : "workspace-grid workspace-grid--wide";
+    : "workspace-grid workspace-grid--wide";
 
   return (
     <div className="workspace-page">
@@ -350,6 +325,9 @@ function AppFrameLayout() {
                   ? "ghost-button sidebar-create-button sidebar-nav-link is-active"
                   : "ghost-button sidebar-create-button sidebar-nav-link"
               }
+              onClick={() => {
+                selectDirectMessage(null);
+              }}
             >
               <span>Contacts</span>
               {contactsBadgeCount > 0 ? <span className="sidebar-badge">{contactsBadgeCount}</span> : null}
@@ -608,8 +586,6 @@ function AppFrameLayout() {
         <main className="workspace-main">
           <Outlet />
         </main>
-
-        <WorkspaceContextCard />
       </div>
     </div>
   );

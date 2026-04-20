@@ -78,7 +78,6 @@ export function ProfilePage() {
       <div className="profile-grid">
         <article className="session-card">
           <p className="session-card-kicker">Account</p>
-          <h2>{user?.name}</h2>
           <dl className="session-meta">
             <div>
               <dt>Username</dt>

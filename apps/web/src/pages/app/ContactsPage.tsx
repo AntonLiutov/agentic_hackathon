@@ -1,7 +1,6 @@
 import {
   type ChangeEvent,
   type ClipboardEvent,
-  type ReactNode,
   useCallback,
   type FormEvent,
   type UIEvent,
@@ -27,7 +26,6 @@ import {
 } from "../../shared/api/messages";
 import { EmojiPicker } from "../../shared/chat/EmojiPicker";
 import { appendEmoji } from "../../shared/chat/emoji";
-import { useWorkspaceContextPanel } from "../../features/layout/workspace-context-panel";
 import { usePresence } from "../../features/presence/use-presence";
 import { useSession } from "../../features/session/use-session";
 import { useConversationRealtime } from "../../shared/realtime/useConversationRealtime";
@@ -108,7 +106,6 @@ function upsertConversationMessage(
 export function ContactsPage() {
   const { user } = useSession();
   const { getPresence, setMany } = usePresence();
-  const { setPanelContent } = useWorkspaceContextPanel();
   const {
     acceptFriendRequest,
     blockedUsers,
@@ -166,6 +163,8 @@ export function ContactsPage() {
   const pendingScrollRestoreRef = useRef<{ previousHeight: number; previousTop: number } | null>(
     null,
   );
+  const activeDirectMessage = hasExplicitSelection ? selectedDirectMessage : null;
+  const activeDirectMessageId = hasExplicitSelection ? selectedDirectMessageId : null;
 
   useEffect(() => {
     if (directMessages.length === 0) {
@@ -236,7 +235,7 @@ export function ContactsPage() {
     let isCancelled = false;
 
     async function loadMessages() {
-      if (!selectedDirectMessageId) {
+      if (!activeDirectMessageId) {
         setMessages([]);
         setSequenceHead(0);
         setHasOlderMessages(false);
@@ -254,12 +253,9 @@ export function ContactsPage() {
       shouldAutoScrollRef.current = true;
 
       try {
-        await loadLatestMessages(selectedDirectMessageId);
-
-        if (hasExplicitSelection) {
-          await messagesApi.markRead(selectedDirectMessageId);
-          clearUnread(selectedDirectMessageId);
-        }
+        await loadLatestMessages(activeDirectMessageId);
+        await messagesApi.markRead(activeDirectMessageId);
+        clearUnread(activeDirectMessageId);
 
         if (isCancelled) {
           return;
@@ -281,18 +277,14 @@ export function ContactsPage() {
       isCancelled = true;
     };
   }, [
+    activeDirectMessageId,
     clearDirectMessageMessages,
     clearUnread,
-    hasExplicitSelection,
     loadLatestMessages,
-    selectedDirectMessage?.can_message,
-    selectedDirectMessage?.counterpart_username,
-    selectedDirectMessage?.status,
-    selectedDirectMessageId,
   ]);
 
   async function loadOlderMessages() {
-    if (!selectedDirectMessageId || !nextBeforeSequence || isLoadingOlderMessages) {
+    if (!activeDirectMessageId || !nextBeforeSequence || isLoadingOlderMessages) {
       return;
     }
 
@@ -308,7 +300,7 @@ export function ContactsPage() {
 
     try {
       const response = await messagesApi.list(
-        selectedDirectMessageId,
+        activeDirectMessageId,
         MESSAGE_PAGE_SIZE,
         nextBeforeSequence,
       );
@@ -537,7 +529,7 @@ export function ContactsPage() {
   async function handleSubmitMessage(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
-    if (!selectedDirectMessage) {
+    if (!activeDirectMessage) {
       return;
     }
 
@@ -569,13 +561,13 @@ export function ContactsPage() {
       } else {
         shouldAutoScrollRef.current = isNearBottom();
         const createdMessage = hasAttachments
-          ? await messagesApi.createWithAttachments(selectedDirectMessage.id, {
+          ? await messagesApi.createWithAttachments(activeDirectMessage.id, {
               body_text: normalizedBodyText || undefined,
               reply_to_message_id: replyTarget?.id,
               attachment_comment: attachmentComment.trim() || undefined,
               files: pendingFiles,
             })
-          : await messagesApi.create(selectedDirectMessage.id, {
+          : await messagesApi.create(activeDirectMessage.id, {
               body_text: normalizedBodyText,
               reply_to_message_id: replyTarget?.id,
             });
@@ -639,8 +631,8 @@ export function ContactsPage() {
   }
 
   const realtime = useConversationRealtime({
-    conversationId: selectedDirectMessageId,
-    enabled: selectedDirectMessageId !== null,
+    conversationId: activeDirectMessageId,
+    enabled: activeDirectMessageId !== null,
     onMessageCreated: useCallback(
       (message, liveSequenceHead) => {
         shouldAutoScrollRef.current = isNearBottom();
@@ -652,10 +644,10 @@ export function ContactsPage() {
           if (
             newestLoadedSequence > 0 &&
             message.sequence_number > newestLoadedSequence + 1 &&
-            selectedDirectMessageId
+            activeDirectMessageId
           ) {
             shouldAutoScrollRef.current = false;
-            void loadLatestMessages(selectedDirectMessageId);
+            void loadLatestMessages(activeDirectMessageId);
             return currentMessages;
           }
 
@@ -668,14 +660,14 @@ export function ContactsPage() {
           hasExplicitSelection &&
           message.author_user_id &&
           message.author_user_id !== user?.id &&
-          selectedDirectMessageId
+          activeDirectMessageId
         ) {
-          void messagesApi.markRead(selectedDirectMessageId).then(() => {
-            clearUnread(selectedDirectMessageId);
+          void messagesApi.markRead(activeDirectMessageId).then(() => {
+            clearUnread(activeDirectMessageId);
           });
         }
       },
-      [clearUnread, hasExplicitSelection, loadLatestMessages, selectedDirectMessageId, user?.id],
+      [activeDirectMessageId, clearUnread, hasExplicitSelection, loadLatestMessages, user?.id],
     ),
     onMessageUpdated: useCallback((message) => {
       setMessages((currentMessages) => {
@@ -696,20 +688,18 @@ export function ContactsPage() {
       });
     }, []),
     onConnected: useCallback(() => {
-      if (!selectedDirectMessageId) {
+      if (!activeDirectMessageId) {
         return;
       }
 
       void refreshDirectMessages();
-      void loadLatestMessages(selectedDirectMessageId);
-    }, [loadLatestMessages, refreshDirectMessages, selectedDirectMessageId]),
+      void loadLatestMessages(activeDirectMessageId);
+    }, [activeDirectMessageId, loadLatestMessages, refreshDirectMessages]),
   });
 
-  const contactsPanelContent = useMemo<ReactNode>(
+  const contactsHubContent = useMemo(
     () => (
       <>
-        <h3>Direct messages</h3>
-
         <div className="context-block">
           <strong>Send friend request</strong>
           <form className="auth-form" onSubmit={handleSendFriendRequest}>
@@ -930,28 +920,22 @@ export function ContactsPage() {
     ],
   );
 
-  useEffect(() => {
-    setPanelContent(contactsPanelContent);
-
-    return () => {
-      setPanelContent(null);
-    };
-  }, [contactsPanelContent, setPanelContent]);
-
   return (
     <section className="chat-workspace card chat-workspace--conversation">
       {directMessagesError ? <p className="auth-error">{directMessagesError}</p> : null}
-      {directMessagesNotice ? <p className="auth-success">{directMessagesNotice}</p> : null}
+      {activeDirectMessage && directMessagesNotice ? (
+        <p className="auth-success">{directMessagesNotice}</p>
+      ) : null}
       {pageErrorMessage ? <p className="auth-error">{pageErrorMessage}</p> : null}
       {pageNoticeMessage ? <p className="auth-success">{pageNoticeMessage}</p> : null}
 
       <div className="chat-room-layout chat-room-layout--single">
         <div className="chat-room-main chat-room-main--conversation">
-          {selectedDirectMessage ? (
+          {activeDirectMessage ? (
             <>
               <header className="chat-header conversation-header">
                 <div className="conversation-header-main">
-                  <h1>{selectedDirectMessage.counterpart_username}</h1>
+                  <h1>{activeDirectMessage.counterpart_username}</h1>
                   <div className="conversation-meta-row">
                     <span className="conversation-meta-chip" title="Direct message">
                       <span aria-hidden="true">#</span>
@@ -960,27 +944,27 @@ export function ContactsPage() {
                     <span
                       className="conversation-meta-chip"
                       title={formatPresenceLabel(
-                        getPresence(selectedDirectMessage.counterpart_user_id) ??
-                          selectedDirectMessage.counterpart_presence_status ??
+                        getPresence(activeDirectMessage.counterpart_user_id) ??
+                          activeDirectMessage.counterpart_presence_status ??
                           "offline",
                       )}
                     >
                       <span
                         className={`presence-dot presence-dot--${
-                          getPresence(selectedDirectMessage.counterpart_user_id) ??
-                          selectedDirectMessage.counterpart_presence_status ??
+                          getPresence(activeDirectMessage.counterpart_user_id) ??
+                          activeDirectMessage.counterpart_presence_status ??
                           "offline"
                         }`}
                       />
                       {formatPresenceLabel(
-                        getPresence(selectedDirectMessage.counterpart_user_id) ??
-                          selectedDirectMessage.counterpart_presence_status ??
+                        getPresence(activeDirectMessage.counterpart_user_id) ??
+                          activeDirectMessage.counterpart_presence_status ??
                           "offline",
                       )}
                     </span>
-                    <span className="conversation-meta-chip" title={selectedDirectMessage.status}>
+                    <span className="conversation-meta-chip" title={activeDirectMessage.status}>
                       <span aria-hidden="true">@</span>
-                      {selectedDirectMessage.status === "active" ? "Active" : selectedDirectMessage.status}
+                      {activeDirectMessage.status === "active" ? "Active" : activeDirectMessage.status}
                     </span>
                     <span
                       className="conversation-meta-chip"
@@ -1003,23 +987,23 @@ export function ContactsPage() {
                 </div>
 
                 <div className="conversation-header-actions">
-                  {isUserBlocked(selectedDirectMessage.counterpart_user_id) ? (
+                  {isUserBlocked(activeDirectMessage.counterpart_user_id) ? (
                     <button
                       className="ghost-button"
                       type="button"
-                      disabled={unblockingUserId === selectedDirectMessage.counterpart_user_id}
+                      disabled={unblockingUserId === activeDirectMessage.counterpart_user_id}
                       onClick={() => {
                         const blockedUser = blockedUsers.find(
                           (currentBlockedUser) =>
                             currentBlockedUser.blocked_user_id ===
-                            selectedDirectMessage.counterpart_user_id,
+                            activeDirectMessage.counterpart_user_id,
                         );
                         if (blockedUser) {
                           void handleUnblockUser(blockedUser);
                         }
                       }}
                     >
-                      {unblockingUserId === selectedDirectMessage.counterpart_user_id
+                      {unblockingUserId === activeDirectMessage.counterpart_user_id
                         ? "Saving..."
                         : "Unblock user"}
                     </button>
@@ -1027,12 +1011,12 @@ export function ContactsPage() {
                     <button
                       className="ghost-button"
                       type="button"
-                      disabled={blockingUsername === selectedDirectMessage.counterpart_username}
+                      disabled={blockingUsername === activeDirectMessage.counterpart_username}
                       onClick={() => {
-                        void handleBlockUsername(selectedDirectMessage.counterpart_username);
+                        void handleBlockUsername(activeDirectMessage.counterpart_username);
                       }}
                     >
-                      {blockingUsername === selectedDirectMessage.counterpart_username
+                      {blockingUsername === activeDirectMessage.counterpart_username
                         ? "Blocking..."
                         : "Block user"}
                     </button>
@@ -1044,19 +1028,19 @@ export function ContactsPage() {
                 <p>Loading messages...</p>
               ) : messages.length === 0 ? (
                 <div className="feature-list">
-                  {!selectedDirectMessage.can_message ? (
+                  {!activeDirectMessage.can_message ? (
                     <li>This conversation is read-only right now.</li>
                   ) : null}
                   <li>No messages yet.</li>
                   <li>
-                    {selectedDirectMessage.can_message
+                    {activeDirectMessage.can_message
                       ? "Send the first message to get the conversation started."
                       : "Messaging is unavailable because the friendship is inactive or one user blocked the other."}
                   </li>
                 </div>
               ) : (
                 <>
-                  {!selectedDirectMessage.can_message ? (
+                  {!activeDirectMessage.can_message ? (
                     <div className="feature-list">
                       <li>This conversation is read-only right now.</li>
                       <li>
@@ -1148,7 +1132,7 @@ export function ContactsPage() {
                             ))}
                           </div>
                         ) : null}
-                        {!message.is_deleted && selectedDirectMessage.can_message ? (
+                        {!message.is_deleted && activeDirectMessage.can_message ? (
                           <div className="message-actions">
                             <button
                               className="ghost-button"
@@ -1201,7 +1185,7 @@ export function ContactsPage() {
                       type="button"
                       aria-label="Emoji"
                       title="Emoji"
-                      disabled={!selectedDirectMessage.can_message}
+                      disabled={!activeDirectMessage.can_message}
                       onClick={() => setIsEmojiPickerOpen((currentValue) => !currentValue)}
                     >
                       😊
@@ -1211,7 +1195,7 @@ export function ContactsPage() {
                       type="button"
                       aria-label="Attach"
                       title="Attach"
-                      disabled={editingMessageId !== null || !selectedDirectMessage.can_message}
+                      disabled={editingMessageId !== null || !activeDirectMessage.can_message}
                       onClick={() => attachmentInputRef.current?.click()}
                     >
                       📎
@@ -1222,7 +1206,7 @@ export function ContactsPage() {
                   </div>
                   {isEmojiPickerOpen ? (
                     <EmojiPicker
-                      disabled={!selectedDirectMessage.can_message}
+                      disabled={!activeDirectMessage.can_message}
                       onSelect={handleInsertEmoji}
                     />
                   ) : null}
@@ -1284,7 +1268,7 @@ export function ContactsPage() {
                         maxLength={500}
                         placeholder="Optional attachment comment"
                         value={attachmentComment}
-                        disabled={!selectedDirectMessage.can_message}
+                        disabled={!activeDirectMessage.can_message}
                         onChange={(event) => setAttachmentComment(event.target.value)}
                       />
                     </div>
@@ -1293,7 +1277,7 @@ export function ContactsPage() {
                     rows={3}
                     maxLength={3072}
                     placeholder="Write a direct message"
-                    disabled={!selectedDirectMessage.can_message}
+                    disabled={!activeDirectMessage.can_message}
                     value={composeText}
                     onChange={(event) => setComposeText(event.target.value)}
                     onPaste={handleComposerPaste}
@@ -1305,7 +1289,7 @@ export function ContactsPage() {
                     <button
                       className="ghost-button composer-send-button"
                       type="submit"
-                      disabled={isSubmittingMessage || !selectedDirectMessage.can_message}
+                      disabled={isSubmittingMessage || !activeDirectMessage.can_message}
                     >
                       {isSubmittingMessage
                         ? editingMessageId !== null
@@ -1320,9 +1304,16 @@ export function ContactsPage() {
               </footer>
             </>
           ) : (
-            <div className="feature-list">
-              <li>Open a direct message from the friend list.</li>
-              <li>Only friends can chat here.</li>
+            <div className="contacts-hub">
+              <header className="chat-header conversation-header">
+                <div className="conversation-header-main">
+                  <h1>Contacts</h1>
+                  <p className="conversation-description">
+                    Manage friends, requests, and blocked users.
+                  </p>
+                </div>
+              </header>
+              <div className="contacts-hub-grid">{contactsHubContent}</div>
             </div>
           )}
         </div>

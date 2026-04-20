@@ -10,7 +10,6 @@ import {
   useState,
 } from "react";
 
-import { useFriends } from "../../features/friends/use-friends";
 import { useRooms } from "../../features/rooms/use-rooms";
 import { usePresence } from "../../features/presence/use-presence";
 import { useSession } from "../../features/session/use-session";
@@ -124,7 +123,6 @@ function upsertConversationMessage(
 export function ChatsPage() {
   const { user } = useSession();
   const { getPresence, setMany } = usePresence();
-  const { blockUser, getFriendshipState, isUserBlocked, sendFriendRequest } = useFriends();
   const {
     clearUnread,
     hasExplicitSelection,
@@ -155,8 +153,6 @@ export function ChatsPage() {
   const [isSubmittingMessage, setIsSubmittingMessage] = useState(false);
   const [isLoadingOlderMessages, setIsLoadingOlderMessages] = useState(false);
   const [removingMemberId, setRemovingMemberId] = useState<string | null>(null);
-  const [requestingFriendId, setRequestingFriendId] = useState<string | null>(null);
-  const [blockingMemberId, setBlockingMemberId] = useState<string | null>(null);
   const [updatingMessageId, setUpdatingMessageId] = useState<number | null>(null);
   const [isManageModalOpen, setIsManageModalOpen] = useState(false);
   const [manageRoomTab, setManageRoomTab] = useState<ManageRoomTab>("members");
@@ -804,36 +800,6 @@ export function ChatsPage() {
     }
   }
 
-  async function handleSendFriendRequest(member: RoomMember) {
-    setPanelError(null);
-    setPanelNotice(null);
-    setRequestingFriendId(member.id);
-
-    try {
-      await sendFriendRequest({ username: member.username });
-      setPanelNotice(`Friend request sent to ${member.username}.`);
-    } catch (error) {
-      setPanelError(getApiErrorMessage(error, "Unable to send that friend request right now."));
-    } finally {
-      setRequestingFriendId(null);
-    }
-  }
-
-  async function handleBlockMember(member: RoomMember) {
-    setPanelError(null);
-    setPanelNotice(null);
-    setBlockingMemberId(member.id);
-
-    try {
-      await blockUser({ username: member.username });
-      setPanelNotice(`${member.username} blocked.`);
-    } catch (error) {
-      setPanelError(getApiErrorMessage(error, "Unable to block that user right now."));
-    } finally {
-      setBlockingMemberId(null);
-    }
-  }
-
   async function handleSubmitMessage(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
@@ -1020,7 +986,18 @@ export function ChatsPage() {
   const filteredMembers = members.filter((member) =>
     member.username.toLowerCase().includes(memberSearchTerm.trim().toLowerCase()),
   );
-  const canShowManageRoom = selectedRoom?.can_manage_members ?? false;
+  const canShowManageRoom = selectedRoom?.is_member ?? false;
+  const visibleManageRoomTabs: Array<[ManageRoomTab, string]> = [
+    ["members", "Members"],
+    ["admins", "Admins"],
+    ...(selectedRoom?.can_manage_members
+      ? ([
+          ["bans", "Banned users"],
+          ["invitations", "Invitations"],
+          ["settings", "Settings"],
+        ] as Array<[ManageRoomTab, string]>)
+      : []),
+  ];
 
   if (!selectedRoom) {
     return (
@@ -1205,13 +1182,7 @@ export function ChatsPage() {
             </header>
 
             <div className="modal-tabs" role="tablist" aria-label="Manage room sections">
-              {[
-                ["members", "Members"],
-                ["admins", "Admins"],
-                ["bans", "Banned users"],
-                ["invitations", "Invitations"],
-                ["settings", "Settings"],
-              ].map(([tabId, label]) => (
+              {visibleManageRoomTabs.map(([tabId, label]) => (
                 <button
                   key={tabId}
                   className={manageRoomTab === tabId ? "modal-tab is-active" : "modal-tab"}
@@ -1321,7 +1292,7 @@ export function ChatsPage() {
                           <small>{member.is_owner ? "Owner and permanent admin" : "Room admin"}</small>
                         </div>
                         <div className="room-member-actions">
-                          {!member.is_owner && member.id !== user?.id ? (
+                          {selectedRoom.can_manage_members && !member.is_owner && member.id !== user?.id ? (
                             <button
                               className="ghost-button sidebar-action-button"
                               type="button"
@@ -1333,7 +1304,9 @@ export function ChatsPage() {
                               {demotingAdminId === member.id ? "Saving..." : "Remove admin"}
                             </button>
                           ) : (
-                            <span className="sidebar-muted">Owner rights cannot be removed</span>
+                            <span className="sidebar-muted">
+                              {member.is_owner ? "Owner rights cannot be removed" : "Admin access only"}
+                            </span>
                           )}
                         </div>
                       </li>
@@ -1532,7 +1505,7 @@ export function ChatsPage() {
         </div>
       ) : null}
 
-      <div className="chat-room-layout">
+      <div className="chat-room-layout chat-room-layout--single">
         <div className="chat-room-main chat-room-main--thread">
           {isLoadingMessages ? (
             <p>Loading messages...</p>
@@ -1776,107 +1749,6 @@ export function ChatsPage() {
             </form>
           </footer>
         </div>
-
-        <aside className="room-context-rail">
-          <article className="session-card room-people-card">
-            <div className="room-context-card-header">
-              <div>
-                <p className="session-card-kicker">Members</p>
-                <h2>Room members</h2>
-              </div>
-              <span className="sidebar-muted">{members.length}</span>
-            </div>
-            {isLoadingPeople ? (
-              <p>Loading room members...</p>
-            ) : (
-              <ul className="room-people-list room-people-list--scrollable">
-                {members.map((member) => (
-                  <li key={member.id} className="room-people-item room-people-item--member">
-                    <div className="room-person-summary">
-                      <strong
-                        className="room-person-line"
-                        title={`${member.username} (${formatPresenceLabel(
-                          getPresence(member.id) ?? member.presence_status ?? "offline",
-                        )}, ${member.is_owner ? "Owner" : member.is_admin ? "Admin" : "Member"})`}
-                      >
-                        <span
-                          className={`presence-dot presence-dot--${
-                            getPresence(member.id) ?? member.presence_status ?? "offline"
-                          }`}
-                          aria-hidden="true"
-                        />
-                        <span>{member.username}</span>
-                      </strong>
-                    </div>
-                    <div className="room-member-actions">
-                      {getFriendshipState(member.id) === "friend" ? (
-                        <span className="sidebar-muted">Friend</span>
-                      ) : getFriendshipState(member.id) === "outgoing_request" ? (
-                        <span className="sidebar-muted">Request sent</span>
-                      ) : getFriendshipState(member.id) === "incoming_request" ? (
-                        <span className="sidebar-muted">Sent you a request</span>
-                      ) : getFriendshipState(member.id) === "none" ? (
-                        <button
-                          className="ghost-button sidebar-action-button"
-                          type="button"
-                          disabled={requestingFriendId === member.id}
-                          onClick={() => {
-                            void handleSendFriendRequest(member);
-                          }}
-                        >
-                          {requestingFriendId === member.id ? "Sending..." : "Add friend"}
-                        </button>
-                      ) : null}
-                      {!member.is_owner && member.id !== user?.id && !isUserBlocked(member.id) ? (
-                        <button
-                          className="ghost-button sidebar-action-button"
-                          type="button"
-                          disabled={blockingMemberId === member.id}
-                          onClick={() => {
-                            void handleBlockMember(member);
-                          }}
-                        >
-                          {blockingMemberId === member.id ? "Blocking..." : "Block"}
-                        </button>
-                      ) : null}
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </article>
-
-          {selectedRoom.can_manage_members ? (
-            <article className="session-card room-people-card">
-              <div className="room-context-card-header">
-                <div>
-                  <p className="session-card-kicker">Moderation</p>
-                  <h2>Banned users</h2>
-                </div>
-                <span className="sidebar-muted">{bans.length}</span>
-              </div>
-              {isLoadingPeople ? (
-                <p>Loading moderation state...</p>
-              ) : bans.length === 0 ? (
-                <p>No banned users in this room right now.</p>
-              ) : (
-                <ul className="room-people-list room-people-list--scrollable">
-                  {bans.map((ban) => (
-                    <li key={ban.id} className="room-people-item">
-                      <div>
-                        <strong>{ban.username}</strong>
-                        <small>{ban.reason ?? "Removed by a room admin."}</small>
-                      </div>
-                      <span className="sidebar-muted">
-                        {ban.banned_by_username ? `By ${ban.banned_by_username}` : "Admin action"}
-                      </span>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </article>
-          ) : null}
-        </aside>
       </div>
     </section>
   );

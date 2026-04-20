@@ -771,6 +771,12 @@ describe("Message lifecycle", () => {
     renderRoutes(["/app/contacts"]);
 
     await waitFor(() => {
+      expect(screen.getAllByRole("button", { name: "existing.friend" }).length).toBeGreaterThan(0);
+    });
+
+    fireEvent.click(screen.getAllByRole("button", { name: "existing.friend" })[0]);
+
+    await waitFor(() => {
       expect(screen.getByRole("heading", { name: "existing.friend" })).toBeInTheDocument();
       expect(screen.getByText("Hello from your friend")).toBeInTheDocument();
     });
@@ -959,6 +965,12 @@ describe("Message lifecycle", () => {
     });
 
     renderRoutes(["/app/contacts"]);
+
+    await waitFor(() => {
+      expect(screen.getAllByRole("button", { name: "existing.friend" }).length).toBeGreaterThan(0);
+    });
+
+    fireEvent.click(screen.getAllByRole("button", { name: "existing.friend" })[0]);
 
     await waitFor(() => {
       expect(screen.getByRole("heading", { name: "existing.friend" })).toBeInTheDocument();
@@ -1606,6 +1618,12 @@ describe("Message lifecycle", () => {
     vi.stubGlobal("WebSocket", MockWebSocket as unknown as typeof WebSocket);
 
     renderRoutes(["/app/contacts"]);
+
+    await waitFor(() => {
+      expect(screen.getAllByRole("button", { name: "Roman" }).length).toBeGreaterThan(0);
+    });
+
+    fireEvent.click(screen.getAllByRole("button", { name: "Roman" })[0]);
 
     await waitFor(() => {
       expect(screen.getByRole("heading", { name: "Roman" })).toBeInTheDocument();
