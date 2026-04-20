@@ -10,10 +10,13 @@ import {
   useState,
 } from "react";
 
+import { useDirectMessages } from "../../features/direct-messages/use-direct-messages";
+import { useFriends } from "../../features/friends/use-friends";
 import { useRooms } from "../../features/rooms/use-rooms";
 import { usePresence } from "../../features/presence/use-presence";
 import { useSession } from "../../features/session/use-session";
 import { ApiError, getApiErrorMessage } from "../../shared/api/client";
+import type { FriendshipState } from "../../shared/api/friends";
 import { EmojiPicker } from "../../shared/chat/EmojiPicker";
 import { appendEmoji } from "../../shared/chat/emoji";
 import {
@@ -91,6 +94,19 @@ function getRoomRoleLabel(room: {
   return "Member";
 }
 
+function getFriendshipStateLabel(friendshipState: FriendshipState) {
+  switch (friendshipState) {
+    case "friend":
+      return "Friend";
+    case "incoming_request":
+      return "Sent you a friend request";
+    case "outgoing_request":
+      return "Friend request pending";
+    default:
+      return null;
+  }
+}
+
 const MAX_IMAGE_BYTES = 3 * 1024 * 1024;
 const MAX_FILE_BYTES = 20 * 1024 * 1024;
 const MESSAGE_PAGE_SIZE = 30;
@@ -123,6 +139,8 @@ function upsertConversationMessage(
 export function ChatsPage() {
   const { user } = useSession();
   const { getPresence, setMany } = usePresence();
+  const { refreshDirectMessages } = useDirectMessages();
+  const { blockUser, getFriendshipState, isUserBlocked, sendFriendRequest } = useFriends();
   const {
     clearUnread,
     hasExplicitSelection,
@@ -161,6 +179,8 @@ export function ChatsPage() {
   const [promotingMemberId, setPromotingMemberId] = useState<string | null>(null);
   const [demotingAdminId, setDemotingAdminId] = useState<string | null>(null);
   const [unbanningUserId, setUnbanningUserId] = useState<string | null>(null);
+  const [requestingFriendMemberId, setRequestingFriendMemberId] = useState<string | null>(null);
+  const [blockingMemberId, setBlockingMemberId] = useState<string | null>(null);
   const [isDeletingRoom, setIsDeletingRoom] = useState(false);
   const [isSavingRoomSettings, setIsSavingRoomSettings] = useState(false);
   const [memberSearchTerm, setMemberSearchTerm] = useState("");
@@ -685,6 +705,37 @@ export function ChatsPage() {
       setPanelError(getApiErrorMessage(error, "Unable to remove that member right now."));
     } finally {
       setRemovingMemberId(null);
+    }
+  }
+
+  async function handleSendFriendRequest(member: RoomMember) {
+    setPanelError(null);
+    setPanelNotice(null);
+    setRequestingFriendMemberId(member.id);
+
+    try {
+      const friendRequest = await sendFriendRequest({ username: member.username });
+      setPanelNotice(`Friend request sent to ${friendRequest.recipient_username}.`);
+    } catch (error) {
+      setPanelError(getApiErrorMessage(error, "Unable to send that friend request right now."));
+    } finally {
+      setRequestingFriendMemberId(null);
+    }
+  }
+
+  async function handleBlockMember(member: RoomMember) {
+    setPanelError(null);
+    setPanelNotice(null);
+    setBlockingMemberId(member.id);
+
+    try {
+      const blockedUser = await blockUser({ username: member.username });
+      await refreshDirectMessages();
+      setPanelNotice(`${blockedUser.blocked_username} blocked.`);
+    } catch (error) {
+      setPanelError(getApiErrorMessage(error, "Unable to block that user right now."));
+    } finally {
+      setBlockingMemberId(null);
     }
   }
 
@@ -1221,55 +1272,91 @@ export function ChatsPage() {
                     <p>No room members match that search.</p>
                   ) : (
                     <ul className="room-people-list">
-                      {filteredMembers.map((member) => (
-                        <li key={member.id} className="room-people-item room-people-item--member">
-                          <div className="room-person-summary manage-room-person-summary">
-                            <strong
-                              className="room-person-line"
-                              title={`${member.username} (${formatPresenceLabel(
-                                getPresence(member.id) ?? member.presence_status ?? "offline",
-                              )}, ${member.is_owner ? "Owner" : member.is_admin ? "Admin" : "Member"})`}
-                            >
-                              <span
-                                className={`presence-dot presence-dot--${
-                                  getPresence(member.id) ?? member.presence_status ?? "offline"
-                                }`}
-                                aria-hidden="true"
-                              />
-                              <span>{member.username}</span>
-                            </strong>
-                            <small>
-                              {member.is_owner ? "Owner" : member.is_admin ? "Admin" : "Member"}
-                            </small>
-                          </div>
-                          <div className="room-member-actions">
-                            {!member.is_owner && !member.is_admin && selectedRoom.is_owner ? (
-                              <button
-                                className="ghost-button sidebar-action-button"
-                                type="button"
-                                disabled={promotingMemberId === member.id}
-                                onClick={() => {
-                                  void handlePromoteMember(member);
-                                }}
+                      {filteredMembers.map((member) => {
+                        const friendshipState = getFriendshipState(member.id);
+                        const isBlocked = isUserBlocked(member.id);
+                        const friendshipStateLabel = getFriendshipStateLabel(friendshipState);
+
+                        return (
+                          <li key={member.id} className="room-people-item room-people-item--member">
+                            <div className="room-person-summary manage-room-person-summary">
+                              <strong
+                                className="room-person-line"
+                                title={`${member.username} (${formatPresenceLabel(
+                                  getPresence(member.id) ?? member.presence_status ?? "offline",
+                                )}, ${member.is_owner ? "Owner" : member.is_admin ? "Admin" : "Member"})`}
                               >
-                                {promotingMemberId === member.id ? "Saving..." : "Make admin"}
-                              </button>
-                            ) : null}
-                            {member.can_remove ? (
-                              <button
-                                className="ghost-button sidebar-action-button"
-                                type="button"
-                                disabled={removingMemberId === member.id}
-                                onClick={() => {
-                                  void handleRemoveMember(member);
-                                }}
-                              >
-                                {removingMemberId === member.id ? "Removing..." : "Remove from room"}
-                              </button>
-                            ) : null}
-                          </div>
-                        </li>
-                      ))}
+                                <span
+                                  className={`presence-dot presence-dot--${
+                                    getPresence(member.id) ?? member.presence_status ?? "offline"
+                                  }`}
+                                  aria-hidden="true"
+                                />
+                                <span>{member.username}</span>
+                              </strong>
+                              <small>
+                                {member.is_owner ? "Owner" : member.is_admin ? "Admin" : "Member"}
+                              </small>
+                              {isBlocked ? <small>Blocked user</small> : null}
+                              {!isBlocked && friendshipStateLabel ? <small>{friendshipStateLabel}</small> : null}
+                            </div>
+                            <div className="room-member-actions">
+                              {member.id !== user?.id && !isBlocked ? (
+                                friendshipState === "none" ? (
+                                  <button
+                                    className="ghost-button sidebar-action-button"
+                                    type="button"
+                                    disabled={requestingFriendMemberId === member.id}
+                                    onClick={() => {
+                                      void handleSendFriendRequest(member);
+                                    }}
+                                  >
+                                    {requestingFriendMemberId === member.id ? "Sending..." : "Add friend"}
+                                  </button>
+                                ) : friendshipState === "friend" ? (
+                                  <span className="sidebar-muted">Already friends</span>
+                                ) : null
+                              ) : null}
+                              {member.id !== user?.id && !isBlocked ? (
+                                <button
+                                  className="ghost-button sidebar-action-button"
+                                  type="button"
+                                  disabled={blockingMemberId === member.id}
+                                  onClick={() => {
+                                    void handleBlockMember(member);
+                                  }}
+                                >
+                                  {blockingMemberId === member.id ? "Blocking..." : "Block"}
+                                </button>
+                              ) : null}
+                              {!member.is_owner && !member.is_admin && selectedRoom.is_owner ? (
+                                <button
+                                  className="ghost-button sidebar-action-button"
+                                  type="button"
+                                  disabled={promotingMemberId === member.id}
+                                  onClick={() => {
+                                    void handlePromoteMember(member);
+                                  }}
+                                >
+                                  {promotingMemberId === member.id ? "Saving..." : "Make admin"}
+                                </button>
+                              ) : null}
+                              {member.can_remove ? (
+                                <button
+                                  className="ghost-button sidebar-action-button"
+                                  type="button"
+                                  disabled={removingMemberId === member.id}
+                                  onClick={() => {
+                                    void handleRemoveMember(member);
+                                  }}
+                                >
+                                  {removingMemberId === member.id ? "Removing..." : "Remove from room"}
+                                </button>
+                              ) : null}
+                            </div>
+                          </li>
+                        );
+                      })}
                     </ul>
                   )}
                 </div>
